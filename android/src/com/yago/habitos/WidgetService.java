@@ -46,7 +46,7 @@ public class WidgetService extends RemoteViewsService {
             rv.setImageViewResource(R.id.i_dot, it.done ? R.drawable.dot_on : R.drawable.dot_off);
             int col = it.overdue ? 0xFFE8A15C : (it.color.isEmpty() ? 0xFF7FD1AE : Model.color(it.color, true));
             rv.setInt(R.id.i_dot, "setColorFilter", it.done ? col : (col & 0x00FFFFFF) | 0xCC000000);
-            String time = it.overdue ? "atrasada" : (it.minutes >= 0 ? Model.hhmm(it.minutes) : "");
+            String time = it.overdue ? "atrasada" : (it.minutes >= 0 ? Model.hhmm(it.minutes) + ("e".equals(it.kind) && it.end >= 0 ? "–" + Model.hhmm(it.end) : "") : "");
             rv.setTextViewText(R.id.i_time, time);
             rv.setTextColor(R.id.i_time, it.overdue ? 0xFFE8A15C : 0xFF8C9AA6);
 

@@ -44,8 +44,8 @@ public final class Model {
         if (raw == null) {
             seed(state);
             migrateOld(c, state);
-            save(c);
         }
+        if (raw == null || ensureV3(state)) save(c);
         return state;
     }
 
@@ -129,6 +129,43 @@ public final class Model {
             ts.put("c_prova", task("c_prova", "Prova do concurso às 15h15", "2027-01-24", "12:00", "Chegar até 14h30 · documento com foto e caneta"));
         } catch (JSONException ignored) {
         }
+    }
+
+    static JSONObject event(String id, String title, String date, int[] days, String start, String end, int lead, String note, String color) {
+        JSONObject e = new JSONObject();
+        try {
+            e.put("id", id).put("type", "event").put("title", title).put("date", date).put("start", start).put("end", end)
+                    .put("lead", lead).put("note", note).put("remind", true).put("color", color).put("t", 0);
+            JSONArray d = new JSONArray();
+            if (days != null) for (int x : days) d.put(x);
+            e.put("days", d);
+        } catch (JSONException ignored) {
+        }
+        return e;
+    }
+
+    /** Compromissos iniciais (versão 3). Mesmos ids e t=0 nos dois apps, então a sincronização não duplica. */
+    static boolean ensureV3(JSONObject s) {
+        boolean changed = false;
+        try {
+            JSONObject ts = s.getJSONObject("tasks");
+            if (!ts.has("e_aula")) {
+                ts.put("e_aula", event("e_aula", "Aula", "", new int[]{1, 2, 3, 4, 5}, "08:00", "17:10", 30, "", "azul"));
+                changed = true;
+            }
+            if (!ts.has("e_prova")) {
+                ts.put("e_prova", event("e_prova", "Prova do concurso", "2027-01-24", null, "15:15", "19:15", 120, "Portões fecham às 15:00 · documento com foto e caneta", "rosa"));
+                changed = true;
+            }
+            JSONObject old = ts.optJSONObject("c_prova");
+            if (old != null && old.optLong("t") == 0 && !old.optBoolean("deleted")) {
+                old.put("deleted", true);
+                old.put("t", 1);
+                changed = true;
+            }
+        } catch (JSONException ignored) {
+        }
+        return changed;
     }
 
     /** Traz as marcações da versão 1 do app (ids antigos). */
@@ -258,7 +295,7 @@ public final class Model {
         Iterator<String> it = ts.keys();
         while (it.hasNext()) {
             JSONObject t = ts.optJSONObject(it.next());
-            if (t != null && !t.optBoolean("deleted")) out.add(t);
+            if (t != null && !t.optBoolean("deleted") && !isEvent(t)) out.add(t);
         }
         Collections.sort(out, new Comparator<JSONObject>() {
             public int compare(JSONObject a, JSONObject b) {
@@ -269,6 +306,42 @@ public final class Model {
             }
         });
         return out;
+    }
+
+    public static boolean isEvent(JSONObject t) { return "event".equals(t.optString("type")); }
+
+    public static List<JSONObject> events(Context c) {
+        List<JSONObject> out = new ArrayList<>();
+        JSONObject ts = get(c).optJSONObject("tasks");
+        Iterator<String> it = ts.keys();
+        while (it.hasNext()) {
+            JSONObject t = ts.optJSONObject(it.next());
+            if (t != null && !t.optBoolean("deleted") && isEvent(t)) out.add(t);
+        }
+        Collections.sort(out, new Comparator<JSONObject>() {
+            public int compare(JSONObject a, JSONObject b) { return a.optString("start").compareTo(b.optString("start")); }
+        });
+        return out;
+    }
+
+    public static boolean eventOn(JSONObject e, String date) {
+        JSONArray d = e.optJSONArray("days");
+        if (d != null && d.length() > 0) {
+            String from = e.optString("from", "");
+            if (!from.isEmpty() && date.compareTo(from) < 0) return false;
+            int w = dow(date);
+            for (int i = 0; i < d.length(); i++) if (d.optInt(i, -1) == w) return true;
+            return false;
+        }
+        return date.equals(e.optString("date", ""));
+    }
+
+    public static String eventSub(JSONObject e) {
+        String s = e.optString("start", "");
+        String en = e.optString("end", "");
+        String r = s + (en.isEmpty() ? "" : " – " + en);
+        String n = e.optString("note", "");
+        return n.isEmpty() ? r : r + " · " + n;
     }
 
     public static JSONObject taskById(Context c, String id) {
@@ -323,7 +396,8 @@ public final class Model {
     // ---------------- lista do dia ----------------
 
     public static final class Item {
-        public String kind; // "h" ou "t"
+        public String kind; // "e" compromisso, "h" hábito, "t" tarefa
+        public int end = -1;
         public String id, title, sub;
         public int minutes = -1;
         public boolean done, overdue;
@@ -346,6 +420,18 @@ public final class Model {
             it.done = isMarked(c, date, it.id);
             if (date.equals(today)) it.streak = streak(c, h);
             it.color = colorKey(h);
+            out.add(it);
+        }
+        for (JSONObject e : events(c)) {
+            if (!eventOn(e, date)) continue;
+            Item it = new Item();
+            it.kind = "e";
+            it.id = e.optString("id");
+            it.title = e.optString("title");
+            it.sub = e.optString("note", "");
+            it.minutes = parseTime(e.optString("start", ""));
+            it.end = parseTime(e.optString("end", ""));
+            it.color = e.optString("color", "azul");
             out.add(it);
         }
         for (JSONObject t : tasks(c)) {
@@ -380,6 +466,7 @@ public final class Model {
     }
 
     public static void toggle(Context c, String date, String kind, String id) {
+        if ("e".equals(kind)) return;
         if ("t".equals(kind)) {
             JSONObject t = taskById(c, id);
             if (t == null) return;
@@ -398,6 +485,7 @@ public final class Model {
     public static int[] progress(Context c, String date) {
         int tot = 0, done = 0;
         for (Item it : itemsFor(c, date)) {
+            if ("e".equals(it.kind)) continue;
             tot++;
             if (it.done) done++;
         }
@@ -455,11 +543,23 @@ public final class Model {
 
     // ---------------- resumos ----------------
 
-    /** Próxima tarefa pendente com data (hoje ou depois), ou null. */
+    /** Próximo compromisso de data única ou tarefa com data (hoje ou depois), ou null. */
     public static JSONObject nextTask(Context c) {
         String today = today();
         int nowMin = Calendar.getInstance().get(Calendar.HOUR_OF_DAY) * 60 + Calendar.getInstance().get(Calendar.MINUTE);
-        for (JSONObject t : tasks(c)) {
+        List<JSONObject> all = new ArrayList<>(tasks(c));
+        for (JSONObject e : events(c)) {
+            JSONArray d = e.optJSONArray("days");
+            if (d == null || d.length() == 0) {
+                try { all.add(new JSONObject(e.toString()).put("time", e.optString("start"))); } catch (JSONException ignored) { }
+            }
+        }
+        Collections.sort(all, new Comparator<JSONObject>() {
+            public int compare(JSONObject a, JSONObject b) {
+                return (a.optString("date") + a.optString("time")).compareTo(b.optString("date") + b.optString("time"));
+            }
+        });
+        for (JSONObject t : all) {
             if (t.optBoolean("done")) continue;
             String d = t.optString("date", "");
             if (d.isEmpty() || d.compareTo(today) < 0) continue;
@@ -499,6 +599,22 @@ public final class Model {
         int best = 0;
         for (JSONObject h : habits(c)) best = Math.max(best, streak(c, h));
         return best;
+    }
+
+    /** Tem compromisso de data única ou tarefa com prazo neste dia? */
+    public static boolean hasMarker(Context c, String date) {
+        for (JSONObject e : events(c)) {
+            JSONArray d = e.optJSONArray("days");
+            if ((d == null || d.length() == 0) && date.equals(e.optString("date"))) return true;
+        }
+        for (JSONObject t : tasks(c)) if (date.equals(t.optString("date")) && !t.optBoolean("done")) return true;
+        return false;
+    }
+
+    public static String monthName(String date) {
+        Calendar c = parse(date);
+        String m = MONTHS[c.get(Calendar.MONTH)];
+        return Character.toUpperCase(m.charAt(0)) + m.substring(1) + " " + c.get(Calendar.YEAR);
     }
 
     public static String greeting() {

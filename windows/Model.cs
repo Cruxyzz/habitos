@@ -35,15 +35,16 @@ namespace Habitos
                     if (state != null) return state;
                     try { if (File.Exists(StatePath)) state = Json.DeserializeObject(File.ReadAllText(StatePath, Encoding.UTF8)) as Dictionary<string, object>; }
                     catch { state = null; }
-                    if (state == null)
+                    bool fresh = state == null;
+                    if (fresh)
                     {
                         state = new Dictionary<string, object>();
                         Shape(state);
                         Seed(state);
                         MigrateOld(state);
-                        Save();
                     }
                     Shape(state);
+                    if (EnsureV3(state) || fresh) Save();
                     return state;
                 }
             }
@@ -126,6 +127,30 @@ namespace Habitos
             ts["c_deferida"] = T("c_deferida", "Conferir se a inscrição foi deferida", "2026-12-10", "18:30", "");
             ts["c_local"] = T("c_local", "Ver local e sala da prova", "2027-01-13", "18:30", "concursos.furb.br");
             ts["c_prova"] = T("c_prova", "Prova do concurso às 15h15", "2027-01-24", "12:00", "Chegar até 14h30 · documento com foto e caneta");
+        }
+
+        static Dictionary<string, object> Ev(string id, string title, string date, int[] days, string start, string end, int lead, string note, string color)
+        {
+            return new Dictionary<string, object> {
+                {"id", id}, {"type", "event"}, {"title", title}, {"date", date}, {"days", (days ?? new int[0]).Cast<object>().ToArray()},
+                {"start", start}, {"end", end}, {"lead", lead}, {"note", note}, {"remind", true}, {"color", color}, {"t", 0L}
+            };
+        }
+
+        // Compromissos iniciais da versão 3 (mesmos ids e t=0 no celular, então não duplica).
+        static bool EnsureV3(Dictionary<string, object> s)
+        {
+            bool changed = false;
+            var ts = (Dictionary<string, object>)s["tasks"];
+            if (!ts.ContainsKey("e_aula")) { ts["e_aula"] = Ev("e_aula", "Aula", "", new[] { 1, 2, 3, 4, 5 }, "08:00", "17:10", 30, "", "azul"); changed = true; }
+            if (!ts.ContainsKey("e_prova")) { ts["e_prova"] = Ev("e_prova", "Prova do concurso", "2027-01-24", null, "15:15", "19:15", 120, "Portões fecham às 15:00 · documento com foto e caneta", "rosa"); changed = true; }
+            object o;
+            if (ts.TryGetValue("c_prova", out o))
+            {
+                var old = o as Dictionary<string, object>;
+                if (old != null && L(old, "t") == 0 && !Bool(old, "deleted", false)) { old["deleted"] = true; old["t"] = 1L; changed = true; }
+            }
+            return changed;
         }
 
         static void MigrateOld(Dictionary<string, object> s)
@@ -258,8 +283,35 @@ namespace Habitos
         public static List<Dictionary<string, object>> Tasks()
         {
             lock (Lock)
-                return Coll("tasks").Values.OfType<Dictionary<string, object>>().Where(t => !Bool(t, "deleted", false))
+                return Coll("tasks").Values.OfType<Dictionary<string, object>>().Where(t => !Bool(t, "deleted", false) && !IsEvent(t))
                     .OrderBy(t => Str(t, "date") == "" ? 1 : 0).ThenBy(t => Str(t, "date") + Str(t, "time")).ThenBy(t => Str(t, "title")).ToList();
+        }
+
+        public static bool IsEvent(Dictionary<string, object> t) { return Str(t, "type") == "event"; }
+
+        public static List<Dictionary<string, object>> Events()
+        {
+            lock (Lock)
+                return Coll("tasks").Values.OfType<Dictionary<string, object>>().Where(t => !Bool(t, "deleted", false) && IsEvent(t))
+                    .OrderBy(t => Str(t, "start")).ToList();
+        }
+
+        public static bool EventOn(Dictionary<string, object> e, DateTime d)
+        {
+            var days = Days(e);
+            if (days.Length > 0)
+            {
+                var from = Str(e, "from");
+                if (from != "" && d < ParseDate(from)) return false;
+                return days.Contains((int)d.DayOfWeek);
+            }
+            return Str(e, "date") == Key(d);
+        }
+
+        public static string EventSub(Dictionary<string, object> e)
+        {
+            var r = Str(e, "start") + (Str(e, "end") != "" ? " – " + Str(e, "end") : "");
+            return Str(e, "note") == "" ? r : r + " · " + Str(e, "note");
         }
 
         public static Dictionary<string, object> Task(string id)
@@ -306,7 +358,7 @@ namespace Habitos
         public class Item
         {
             public string Kind, Id, Title, Sub;
-            public int Minutes = -1;
+            public int Minutes = -1, End = -1;
             public bool Done, Overdue;
             public int Streak;
             public string Color = "";
@@ -325,6 +377,12 @@ namespace Habitos
                     Kind = "h", Id = id, Title = Str(h, "title"), Sub = HabitSub(h, date), Minutes = TimeOf(h, date),
                     Done = Marked(date, id), Streak = date == today ? Streak(h) : 0, Color = ColorKey(h)
                 });
+            }
+            foreach (var e in Events())
+            {
+                if (!EventOn(e, date)) continue;
+                outl.Add(new Item { Kind = "e", Id = Str(e, "id"), Title = Str(e, "title"), Sub = Str(e, "note"),
+                    Minutes = ParseTime(Str(e, "start")), End = ParseTime(Str(e, "end")), Color = Str(e, "color") == "" ? "azul" : Str(e, "color") });
             }
             var tk = Key(today); var dk = Key(date);
             foreach (var t in Tasks())
@@ -346,6 +404,7 @@ namespace Habitos
 
         public static void Toggle(DateTime date, string kind, string id)
         {
+            if (kind == "e") return;
             if (kind == "t")
             {
                 var t = Task(id);
@@ -360,7 +419,7 @@ namespace Habitos
 
         public static int[] Progress(DateTime d)
         {
-            var l = ItemsFor(d);
+            var l = ItemsFor(d).Where(i => i.Kind != "e").ToList();
             return new[] { l.Count(i => i.Done), l.Count };
         }
 
@@ -420,7 +479,10 @@ namespace Habitos
         {
             var tk = Key(DateTime.Today);
             int nowMin = DateTime.Now.Hour * 60 + DateTime.Now.Minute;
-            foreach (var t in Tasks())
+            var all = Tasks().ToList();
+            foreach (var e in Events())
+                if (Days(e).Length == 0) { var c = new Dictionary<string, object>(e); c["time"] = Str(e, "start"); all.Add(c); }
+            foreach (var t in all.OrderBy(x => Str(x, "date") + Str(x, "time")))
             {
                 if (Bool(t, "done", false)) continue;
                 var d = Str(t, "date");
@@ -455,6 +517,15 @@ namespace Habitos
             }
             return n;
         }
+
+        public static bool HasMarker(DateTime d)
+        {
+            var k = Key(d);
+            return Events().Any(e => Days(e).Length == 0 && Str(e, "date") == k) || Tasks().Any(t => Str(t, "date") == k && !Bool(t, "done", false));
+        }
+
+        static readonly string[] MonthNames = { "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro" };
+        public static string MonthName(DateTime d) { return MonthNames[d.Month - 1] + " " + d.Year; }
 
         public static string Greeting()
         {

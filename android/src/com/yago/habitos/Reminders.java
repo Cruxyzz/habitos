@@ -55,6 +55,13 @@ public final class Reminders {
                 long t = Model.atMinutes(d, m - h.optInt("lead", 0));
                 if (t > now && t < best) { best = t; bestKey = "h|" + d + "|" + h.optString("id"); }
             }
+            for (JSONObject e : Model.events(c)) {
+                if (!e.optBoolean("remind", true) || !Model.eventOn(e, d)) continue;
+                int m = Model.parseTime(e.optString("start", ""));
+                if (m < 0) continue;
+                long t = Model.atMinutes(d, m - e.optInt("lead", 0));
+                if (t > now && t < best) { best = t; bestKey = "e|" + d + "|" + e.optString("id"); }
+            }
             long mid = Model.atMinutes(d, 24 * 60) + 30000;
             if (mid > now && mid < best) { best = mid; bestKey = "midnight||"; }
         }
@@ -110,6 +117,16 @@ public final class Reminders {
                 String sub = Model.habitSubtitle(h, date);
                 int lead = h.optInt("lead", 0);
                 text = lead > 0 ? "Daqui a " + lead + " min · " + sub : (sub.isEmpty() ? "Hora de fazer." : sub);
+            }
+        } else if (p[0].equals("e") && p.length == 3) {
+            JSONObject e = Model.taskById(c, p[2]);
+            if (e != null) {
+                int lead = e.optInt("lead", 0);
+                String et = (lead > 0 ? "Começa em " + (lead >= 60 && lead % 60 == 0 ? (lead / 60) + " h" : lead + " min") : "Começando agora")
+                        + " · " + Model.eventSub(e);
+                Notification.Builder b = builder(c).setContentTitle(e.optString("title")).setContentText(et)
+                        .setStyle(new Notification.BigTextStyle().bigText(et));
+                nm.notify(notifId(key), b.build());
             }
         } else if (p[0].equals("t") && p.length == 3) {
             JSONObject t = Model.taskById(c, p[2]);

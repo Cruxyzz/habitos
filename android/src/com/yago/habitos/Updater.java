@@ -36,10 +36,11 @@ public final class Updater {
         }
     }
 
-    public static void check(final Context ctx, final Cb onFound) {
+    public static void check(final Context ctx, final Cb onFound) { check(ctx, onFound, null); }
+
+    /** Confere sempre (sem intervalo). "result" recebe: "nova", "atual" ou a mensagem de erro. */
+    public static void check(final Context ctx, final Cb onFound, final Progress result) {
         final Context c = ctx.getApplicationContext();
-        long last = Model.prefs(c).getLong("upd_check", 0);
-        if (available == null && System.currentTimeMillis() - last < 30 * 60 * 1000L) return;
         new Thread(new Runnable() {
             public void run() {
                 try {
@@ -48,11 +49,16 @@ public final class Updater {
                     Model.prefs(c).edit().putLong("upd_check", System.currentTimeMillis()).apply();
                     if (a.getInt("version") > currentVersion(c)) {
                         available = a;
-                        main.post(new Runnable() { public void run() { if (onFound != null) onFound.run(); } });
+                        main.post(new Runnable() { public void run() {
+                            if (onFound != null) onFound.run();
+                            if (result != null) result.done(true, "nova");
+                        } });
                     } else {
                         available = null;
+                        main.post(new Runnable() { public void run() { if (result != null) result.done(true, "atual"); } });
                     }
-                } catch (Exception ignored) {
+                } catch (final Exception e) {
+                    main.post(new Runnable() { public void run() { if (result != null) result.done(false, "Sem conexão com o GitHub"); } });
                 }
             }
         }).start();

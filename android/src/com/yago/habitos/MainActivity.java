@@ -154,16 +154,18 @@ public class MainActivity extends Activity {
 
     // ---------------- tela ----------------
 
+    String mode = "dia";      // dia, semana, mes
+    String monthAnchor;       // qualquer data do mês mostrado
+
     void render() {
         root.removeAllViews();
         final String today = Model.today();
-        int[] prog = Model.progress(this, sel);
         boolean isToday = sel.equals(today);
 
         // Linha de cima: saudação + ajustes
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.addView(text(isToday ? Model.greeting() : Model.longDate(sel), 15, MUTED, REGULAR), new LinearLayout.LayoutParams(0, WRAP, 1));
+        top.addView(text(Model.greeting(), 15, MUTED, REGULAR), new LinearLayout.LayoutParams(0, WRAP, 1));
         TextView gear = text("Ajustes", 13, MUTED, MEDIUM);
         gear.setPadding(dp(14), dp(7), dp(14), dp(7));
         gear.setBackground(round(0, LINE, 99));
@@ -171,15 +173,52 @@ public class MainActivity extends Activity {
         top.addView(gear);
         root.addView(top);
 
-        String title = isToday ? "Hoje" : (sel.equals(Model.addDays(today, -1)) ? "Ontem" : Model.DOW[Model.dow(sel)]);
-        TextView h1 = text(title, 40, INK, DISPLAY);
+        String title;
+        if (mode.equals("mes")) title = Model.monthName(monthAnchor == null ? sel : monthAnchor);
+        else if (mode.equals("semana")) title = "Semana";
+        else title = isToday ? "Hoje" : (sel.equals(Model.addDays(today, -1)) ? "Ontem" : Model.DOW[Model.dow(sel)]);
+        TextView h1 = text(title, mode.equals("mes") ? 32 : 40, INK, DISPLAY);
         h1.setLetterSpacing(-0.02f);
         root.addView(h1, lp(WRAP, WRAP, 0));
-        if (isToday) root.addView(text(Model.longDate(sel), 14, MUTED, REGULAR));
+        if (mode.equals("dia")) root.addView(text(Model.longDate(sel), 14, MUTED, REGULAR));
 
+        root.addView(segmented(), lp(MATCH, WRAP, dp(16)));
         updateBanner();
 
-        // Cartão de resumo
+        if (mode.equals("semana")) renderWeek(today);
+        else if (mode.equals("mes")) renderMonth(today);
+        else renderDay(today);
+    }
+
+    View segmented() {
+        LinearLayout seg = new LinearLayout(this);
+        seg.setPadding(dp(4), dp(4), dp(4), dp(4));
+        seg.setBackground(round(dark ? SURFACE : 0xFFECEFEC, 0, 99));
+        String[] keys = {"dia", "semana", "mes"}, labels = {"Dia", "Semana", "Mês"};
+        for (int i = 0; i < 3; i++) {
+            final String k = keys[i];
+            boolean on = mode.equals(k);
+            TextView t = text(labels[i], 14, on ? INK : MUTED, MEDIUM);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(0, dp(8), 0, dp(8));
+            if (on) { t.setBackground(round(dark ? 0xFF2A333A : 0xFFFFFFFF, 0, 99)); t.setElevation(dp(1)); }
+            t.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                mode = k;
+                if (k.equals("mes")) monthAnchor = sel;
+                if (k.equals("semana")) weekAnchor = Model.addDays(sel, -Model.dow(sel));
+                render();
+            } });
+            seg.addView(t, new LinearLayout.LayoutParams(0, WRAP, 1));
+        }
+        return seg;
+    }
+
+    // ---------------- Dia ----------------
+
+    void renderDay(final String today) {
+        boolean isToday = sel.equals(today);
+        int[] prog = Model.progress(this, sel);
+
         LinearLayout hero = new LinearLayout(this);
         hero.setGravity(Gravity.CENTER_VERTICAL);
         hero.setPadding(dp(18), dp(18), dp(18), dp(18));
@@ -192,7 +231,7 @@ public class MainActivity extends Activity {
         int left = prog[1] - prog[0];
         String headline = prog[1] == 0 ? "Dia livre" : left == 0 ? "Tudo feito!" : prog[0] == 0 ? "Vamos começar" : "Faltam " + left;
         ht.addView(text(headline, 20, INK, MEDIUM));
-        ht.addView(text(prog[0] + " de " + prog[1] + " concluídos", 14, MUTED, REGULAR));
+        ht.addView(text(prog[0] + " de " + prog[1] + " hábitos e tarefas", 14, MUTED, REGULAR));
         int ps = Model.perfectStreak(this);
         if (ps > 0) {
             TextView st = text(ps + (ps == 1 ? " dia" : " dias") + " seguidos com tudo feito", 13, ACCENT, MEDIUM);
@@ -200,9 +239,8 @@ public class MainActivity extends Activity {
             ht.addView(st);
         }
         hero.addView(ht, new LinearLayout.LayoutParams(0, WRAP, 1));
-        root.addView(hero, lp(MATCH, WRAP, dp(18)));
+        root.addView(hero, lp(MATCH, WRAP, dp(16)));
 
-        // A seguir: próxima tarefa com data
         JSONObject nx = isToday ? Model.nextTask(this) : null;
         if (nx != null) {
             LinearLayout nc = new LinearLayout(this);
@@ -219,27 +257,22 @@ public class MainActivity extends Activity {
             nt.addView(ntt);
             nc.addView(nt, new LinearLayout.LayoutParams(0, WRAP, 1));
             String d = nx.optString("date"), tm = nx.optString("time", "");
-            String when = Model.relDay(d) + (tm.isEmpty() ? "" : "\n" + tm);
-            TextView w = text(when, 13, ACCENT, MEDIUM);
+            TextView w = text(Model.relDay(d) + (tm.isEmpty() ? "" : "\n" + tm), 13, ACCENT, MEDIUM);
             w.setGravity(Gravity.END);
             nc.addView(w);
-            final String nid = nx.optString("id");
-            nc.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View v) {
-                editTask(Model.taskById(MainActivity.this, nid)); return true; } });
             root.addView(nc, lp(MATCH, WRAP, dp(10)));
         }
 
-        root.addView(weekStrip(today), lp(MATCH, WRAP, dp(20)));
+        root.addView(weekStrip(today), lp(MATCH, WRAP, dp(18)));
 
-        // Itens
         List<Model.Item> items = Model.itemsFor(this, sel);
         if (items.isEmpty()) {
-            TextView em = text(sel.compareTo(Model.START) < 0 ? "Nada registrado neste dia." : "Nada pra este dia.\nToque em + pra criar um hábito ou uma tarefa.", 15, MUTED, REGULAR);
+            TextView em = text("Nada pra este dia.\nToque em + pra criar um compromisso, hábito ou tarefa.", 15, MUTED, REGULAR);
             em.setGravity(Gravity.CENTER);
             em.setPadding(0, dp(28), 0, dp(12));
             root.addView(em, lp(MATCH, WRAP, 0));
         }
-        String[] names = {"Atrasadas", "Manhã", "Tarde", "Noite", "Qualquer hora"};
+        String[] names = {"Atrasadas", "Compromissos", "Hábitos", "Tarefas"};
         for (int g = 0; g < names.length; g++) {
             int cnt = 0, done = 0;
             for (Model.Item it : items) if (groupOf(it) == g) { cnt++; if (it.done) done++; }
@@ -249,13 +282,279 @@ public class MainActivity extends Activity {
             TextView gt = text(names[g].toUpperCase(), 12, g == 0 ? LATE : MUTED, MEDIUM);
             gt.setLetterSpacing(0.08f);
             gh.addView(gt, new LinearLayout.LayoutParams(0, WRAP, 1));
-            gh.addView(text(done + "/" + cnt, 12, MUTED, REGULAR));
-            root.addView(gh, lp(MATCH, WRAP, dp(26)));
-            for (Model.Item it : items) if (groupOf(it) == g) root.addView(row(it), lp(MATCH, WRAP, dp(8)));
+            if (g != 1) gh.addView(text(done + "/" + cnt, 12, MUTED, REGULAR));
+            root.addView(gh, lp(MATCH, WRAP, dp(24)));
+            for (Model.Item it : items) if (groupOf(it) == g)
+                root.addView(g == 1 ? eventRow(it, isToday) : row(it), lp(MATCH, WRAP, dp(8)));
         }
 
-        // Resumo da semana
         if (sel.compareTo(Model.START) >= 0) root.addView(weekSummary(today), lp(MATCH, WRAP, dp(30)));
+    }
+
+    View eventRow(final Model.Item it, boolean isToday) {
+        int col = Model.color(it.color.isEmpty() ? "azul" : it.color, dark);
+        LinearLayout r = new LinearLayout(this);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(0, 0, dp(14), 0);
+        r.setBackground(round(SURFACE, dark ? 0 : LINE, 18));
+
+        View bar = new View(this);
+        bar.setBackground(round(col, 0, 3));
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(dp(5), dp(46));
+        bl.setMargins(dp(12), dp(12), dp(12), dp(12));
+        r.addView(bar, bl);
+
+        LinearLayout times = new LinearLayout(this);
+        times.setOrientation(LinearLayout.VERTICAL);
+        times.addView(text(it.minutes >= 0 ? Model.hhmm(it.minutes) : "—", 15, INK, MEDIUM));
+        if (it.end >= 0) times.addView(text(Model.hhmm(it.end), 13, MUTED, REGULAR));
+        r.addView(times, new LinearLayout.LayoutParams(dp(54), WRAP));
+
+        LinearLayout txt = new LinearLayout(this);
+        txt.setOrientation(LinearLayout.VERTICAL);
+        txt.setPadding(dp(6), dp(12), dp(8), dp(12));
+        txt.addView(text(it.title, 16, INK, MEDIUM));
+        if (it.sub != null && !it.sub.isEmpty()) {
+            TextView t2 = text(it.sub, 13, MUTED, REGULAR);
+            t2.setPadding(0, dp(2), 0, 0);
+            txt.addView(t2);
+        }
+        r.addView(txt, new LinearLayout.LayoutParams(0, WRAP, 1));
+
+        if (isToday && it.minutes >= 0) {
+            Calendar now = Calendar.getInstance();
+            int nm = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+            int end = it.end >= 0 ? it.end : it.minutes + 60;
+            String badge = nm >= it.minutes && nm < end ? "agora" : (nm >= end ? "encerrado" : null);
+            if (badge != null) {
+                TextView b = text(badge, 12, badge.equals("agora") ? col : MUTED, MEDIUM);
+                b.setPadding(dp(10), dp(4), dp(10), dp(4));
+                b.setBackground(round(badge.equals("agora") ? (col & 0x00FFFFFF) | 0x26000000 : 0, badge.equals("agora") ? 0 : LINE, 99));
+                r.addView(b);
+            }
+        }
+        r.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            editEvent(Model.taskById(MainActivity.this, it.id)); } });
+        return r;
+    }
+
+    // ---------------- Semana ----------------
+
+    void renderWeek(final String today) {
+        LinearLayout nav = new LinearLayout(this);
+        nav.setGravity(Gravity.CENTER_VERTICAL);
+        TextView prev = text("‹", 24, INK, REGULAR);
+        prev.setPadding(dp(8), 0, dp(16), 0);
+        prev.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { weekAnchor = Model.addDays(weekAnchor, -7); render(); } });
+        TextView next = text("›", 24, INK, REGULAR);
+        next.setPadding(dp(16), 0, dp(8), 0);
+        next.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { weekAnchor = Model.addDays(weekAnchor, 7); render(); } });
+        String end = Model.addDays(weekAnchor, 6);
+        TextView lab = text(Model.shortDate(weekAnchor) + " – " + Model.shortDate(end), 15, INK, MEDIUM);
+        lab.setGravity(Gravity.CENTER);
+        nav.addView(prev);
+        nav.addView(lab, new LinearLayout.LayoutParams(0, WRAP, 1));
+        nav.addView(next);
+        root.addView(nav, lp(MATCH, WRAP, dp(16)));
+
+        for (int i = 0; i < 7; i++) {
+            final String d = Model.addDays(weekAnchor, i);
+            boolean isT = d.equals(today), past = d.compareTo(today) < 0;
+            List<Model.Item> items = Model.itemsFor(this, d);
+            int[] p = Model.progress(this, d);
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setPadding(dp(14), dp(14), dp(14), dp(14));
+            card.setBackground(round(SURFACE, isT ? ACCENT : (dark ? 0 : LINE), 18));
+
+            LinearLayout dayCol = new LinearLayout(this);
+            dayCol.setOrientation(LinearLayout.VERTICAL);
+            dayCol.setGravity(Gravity.CENTER_HORIZONTAL);
+            dayCol.addView(text(Model.DOW[Model.dow(d)].substring(0, 3).toUpperCase(), 11, isT ? ACCENT : MUTED, MEDIUM));
+            dayCol.addView(text(String.valueOf(Model.parse(d).get(Calendar.DAY_OF_MONTH)), 24, INK, DISPLAY));
+            card.addView(dayCol, new LinearLayout.LayoutParams(dp(48), WRAP));
+
+            LinearLayout body = new LinearLayout(this);
+            body.setOrientation(LinearLayout.VERTICAL);
+            body.setPadding(dp(10), 0, 0, 0);
+            int shown = 0;
+            for (Model.Item it : items) {
+                if (!it.kind.equals("e") && !(it.kind.equals("t") && !it.overdue)) continue;
+                if (shown++ >= 4) break;
+                LinearLayout line = new LinearLayout(this);
+                line.setGravity(Gravity.CENTER_VERTICAL);
+                View dot = new View(this);
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(it.kind.equals("e") ? GradientDrawable.OVAL : GradientDrawable.RECTANGLE);
+                if (!it.kind.equals("e")) g.setCornerRadius(dp(2));
+                g.setColor(it.kind.equals("e") ? Model.color(it.color, dark) : MUTED);
+                dot.setBackground(g);
+                line.addView(dot, new LinearLayout.LayoutParams(dp(7), dp(7)));
+                String tm = it.minutes >= 0 ? Model.hhmm(it.minutes) + "  " : "";
+                TextView tl = text(tm + it.title, 14, it.done ? MUTED : INK, REGULAR);
+                tl.setSingleLine(true);
+                tl.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                tl.setPadding(dp(8), dp(2), 0, dp(2));
+                line.addView(tl, new LinearLayout.LayoutParams(0, WRAP, 1));
+                body.addView(line);
+            }
+            if (p[1] > 0) {
+                LinearLayout pr = new LinearLayout(this);
+                pr.setGravity(Gravity.CENTER_VERTICAL);
+                pr.setPadding(0, shown > 0 ? dp(8) : dp(4), 0, 0);
+                pr.addView(new Bar(this, (past || isT) ? (float) p[0] / p[1] : 0), new LinearLayout.LayoutParams(0, dp(5), 1));
+                TextView pc = text((past || isT) ? p[0] + "/" + p[1] : p[1] + " itens", 12, MUTED, REGULAR);
+                pc.setPadding(dp(10), 0, 0, 0);
+                pr.addView(pc);
+                body.addView(pr);
+            } else if (shown == 0) {
+                body.addView(text("Livre", 14, MUTED, REGULAR));
+            }
+            card.addView(body, new LinearLayout.LayoutParams(0, WRAP, 1));
+            card.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                if (d.compareTo(Model.today()) > 0 || d.compareTo(Model.START) < 0) { showDayPreview(d); return; }
+                sel = d; mode = "dia"; weekAnchor = Model.addDays(sel, -Model.dow(sel)); render();
+            } });
+            root.addView(card, lp(MATCH, WRAP, dp(8)));
+        }
+    }
+
+    // ---------------- Mês ----------------
+
+    void renderMonth(final String today) {
+        if (monthAnchor == null) monthAnchor = sel;
+        Calendar first = Model.parse(monthAnchor);
+        first.set(Calendar.DAY_OF_MONTH, 1);
+        final String firstDay = Model.fmt(first);
+        int daysIn = first.getActualMaximum(Calendar.DAY_OF_MONTH);
+        int offset = first.get(Calendar.DAY_OF_WEEK) - 1;
+
+        LinearLayout nav = new LinearLayout(this);
+        nav.setGravity(Gravity.CENTER_VERTICAL);
+        TextView prev = text("‹  Anterior", 14, MUTED, MEDIUM);
+        prev.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            Calendar c = Model.parse(firstDay); c.add(Calendar.MONTH, -1); monthAnchor = Model.fmt(c); render(); } });
+        TextView next = text("Próximo  ›", 14, MUTED, MEDIUM);
+        next.setGravity(Gravity.END);
+        next.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            Calendar c = Model.parse(firstDay); c.add(Calendar.MONTH, 1); monthAnchor = Model.fmt(c); render(); } });
+        nav.addView(prev, new LinearLayout.LayoutParams(0, WRAP, 1));
+        nav.addView(next, new LinearLayout.LayoutParams(0, WRAP, 1));
+        root.addView(nav, lp(MATCH, WRAP, dp(16)));
+
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setPadding(dp(8), dp(12), dp(8), dp(12));
+        grid.setBackground(round(SURFACE, dark ? 0 : LINE, 22));
+        LinearLayout head = new LinearLayout(this);
+        for (int i = 0; i < 7; i++) {
+            TextView t = text(Model.DOW1[i], 12, MUTED, MEDIUM);
+            t.setGravity(Gravity.CENTER);
+            head.addView(t, new LinearLayout.LayoutParams(0, WRAP, 1));
+        }
+        grid.addView(head);
+        int cells = ((offset + daysIn + 6) / 7) * 7;
+        LinearLayout week = null;
+        for (int i = 0; i < cells; i++) {
+            if (i % 7 == 0) { week = new LinearLayout(this); grid.addView(week, lp(MATCH, dp(52), dp(4))); }
+            int dayNum = i - offset + 1;
+            if (dayNum < 1 || dayNum > daysIn) { week.addView(new View(this), new LinearLayout.LayoutParams(0, MATCH, 1)); continue; }
+            final String d = Model.addDays(firstDay, dayNum - 1);
+            boolean enabled = d.compareTo(today) <= 0 && d.compareTo(Model.START) >= 0;
+            int[] p = Model.progress(this, d);
+            MonthCell cell = new MonthCell(this, dayNum, enabled && p[1] > 0 ? (float) p[0] / p[1] : -1,
+                    d.equals(today), d.equals(sel), Model.hasMarker(this, d), d.compareTo(today) > 0);
+            cell.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                if (d.compareTo(Model.today()) > 0) { showDayPreview(d); return; }
+                sel = d; mode = "dia"; weekAnchor = Model.addDays(sel, -Model.dow(sel)); render();
+            } });
+            week.addView(cell, new LinearLayout.LayoutParams(0, MATCH, 1));
+        }
+        root.addView(grid, lp(MATCH, WRAP, dp(10)));
+
+        // Lista do mês: compromissos únicos e tarefas com data
+        String last = Model.addDays(firstDay, daysIn - 1);
+        java.util.ArrayList<String[]> rows = new java.util.ArrayList<>();
+        for (JSONObject e : Model.events(this)) {
+            String d = e.optString("date", "");
+            JSONArray days = e.optJSONArray("days");
+            if ((days == null || days.length() == 0) && d.compareTo(firstDay) >= 0 && d.compareTo(last) <= 0)
+                rows.add(new String[]{d + e.optString("start"), d, e.optString("start"), e.optString("title"), e.optString("color", "azul")});
+        }
+        for (JSONObject t : Model.tasks(this)) {
+            String d = t.optString("date", "");
+            if (!d.isEmpty() && d.compareTo(firstDay) >= 0 && d.compareTo(last) <= 0)
+                rows.add(new String[]{d + t.optString("time"), d, t.optString("time"), t.optString("title") + (t.optBoolean("done") ? " ✓" : ""), ""});
+        }
+        java.util.Collections.sort(rows, new java.util.Comparator<String[]>() { public int compare(String[] a, String[] b) { return a[0].compareTo(b[0]); } });
+        if (!rows.isEmpty()) {
+            TextView gt = text("NESTE MÊS", 12, MUTED, MEDIUM);
+            gt.setLetterSpacing(0.08f);
+            root.addView(gt, lp(WRAP, WRAP, dp(24)));
+            for (String[] r : rows) {
+                LinearLayout line = new LinearLayout(this);
+                line.setGravity(Gravity.CENTER_VERTICAL);
+                line.setPadding(dp(14), dp(12), dp(14), dp(12));
+                line.setBackground(round(SURFACE, dark ? 0 : LINE, 14));
+                TextView dd = text(Model.shortDate(r[1]), 14, r[4].isEmpty() ? MUTED : Model.color(r[4], dark), MEDIUM);
+                line.addView(dd, new LinearLayout.LayoutParams(dp(64), WRAP));
+                line.addView(text(r[3], 15, INK, REGULAR), new LinearLayout.LayoutParams(0, WRAP, 1));
+                if (!r[2].isEmpty()) line.addView(text(r[2], 13, MUTED, REGULAR));
+                root.addView(line, lp(MATCH, WRAP, dp(6)));
+            }
+        }
+    }
+
+    void showDayPreview(String d) {
+        StringBuilder sb = new StringBuilder();
+        for (Model.Item it : Model.itemsFor(this, d)) {
+            if (it.kind.equals("h")) continue;
+            if (it.minutes >= 0) sb.append(Model.hhmm(it.minutes)).append(it.end >= 0 ? "–" + Model.hhmm(it.end) : "").append("  ");
+            sb.append(it.title).append("\n");
+        }
+        int habits = 0;
+        for (Model.Item it : Model.itemsFor(this, d)) if (it.kind.equals("h")) habits++;
+        if (habits > 0) sb.append("\n").append(habits).append(" hábitos programados");
+        new AlertDialog.Builder(this).setTitle(Model.longDate(d))
+                .setMessage(sb.length() == 0 ? "Nada programado." : sb.toString().trim())
+                .setPositiveButton("Fechar", null).show();
+    }
+
+    class MonthCell extends View {
+        final int day; final float f; final boolean today, selected, marker, future;
+        final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        MonthCell(Context c, int day, float f, boolean today, boolean selected, boolean marker, boolean future) {
+            super(c); this.day = day; this.f = f; this.today = today; this.selected = selected; this.marker = marker; this.future = future;
+        }
+        @Override protected void onDraw(Canvas cv) {
+            float w = getWidth(), h = getHeight(), cx = w / 2, cy = h / 2 - dp(3);
+            float r = Math.min(w, h) / 2 - dp(6);
+            RectF o = new RectF(cx - r, cy - r, cx + r, cy + r);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(dp(2.5f));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            if (f >= 0) {
+                p.setColor(LINE);
+                cv.drawOval(o, p);
+                if (f > 0) { p.setColor(ACCENT); cv.drawArc(o, -90, 360 * f, false, p); }
+            }
+            if (today) {
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(INK);
+                cv.drawOval(new RectF(cx - r + dp(4), cy - r + dp(4), cx + r - dp(4), cy + r - dp(4)), p);
+            }
+            p.setStyle(Paint.Style.FILL);
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTypeface(today ? MEDIUM : REGULAR);
+            p.setTextSize(dp(14));
+            p.setColor(today ? BG : (future ? MUTED : INK));
+            cv.drawText(String.valueOf(day), cx, cy - (p.descent() + p.ascent()) / 2, p);
+            if (marker) {
+                p.setColor(LATE);
+                cv.drawCircle(cx, h - dp(4), dp(2.5f), p);
+            }
+        }
     }
 
     void updateBanner() {
@@ -318,9 +617,8 @@ public class MainActivity extends Activity {
 
     int groupOf(Model.Item it) {
         if (it.overdue) return 0;
-        if (it.minutes < 0) return 4;
-        if (it.minutes < 12 * 60) return 1;
-        if (it.minutes < 18 * 60) return 2;
+        if ("e".equals(it.kind)) return 1;
+        if ("h".equals(it.kind)) return 2;
         return 3;
     }
 
@@ -405,9 +703,9 @@ public class MainActivity extends Activity {
     void askAdd() {
         new AlertDialog.Builder(this)
                 .setTitle("Criar")
-                .setItems(new String[]{"Novo hábito (repete nos dias escolhidos)", "Nova tarefa (uma vez só)"},
+                .setItems(new String[]{"Compromisso · horário de início e fim", "Hábito · algo que você repete e marca", "Tarefa · algo pra fazer uma vez"},
                         new DialogInterface.OnClickListener() { public void onClick(DialogInterface d, int w) {
-                            if (w == 0) editHabit(null); else editTask(null);
+                            if (w == 0) editEvent(null); else if (w == 1) editHabit(null); else editTask(null);
                         } })
                 .show();
     }
@@ -619,6 +917,177 @@ public class MainActivity extends Activity {
         dlg.show();
     }
 
+    void editEvent(final JSONObject existing) {
+        final JSONObject e;
+        try { e = existing != null ? new JSONObject(existing.toString()) : new JSONObject(); }
+        catch (JSONException ex) { return; }
+        final boolean isNew = existing == null;
+        LinearLayout f = form();
+        final EditText title = field("Nome do compromisso", e.optString("title"));
+        final EditText note = field("Local ou detalhe (opcional)", e.optString("note"));
+        f.addView(title);
+        f.addView(note);
+
+        JSONArray ja = e.optJSONArray("days");
+        final boolean[] weekly = {ja != null && ja.length() > 0};
+        final boolean[] days = new boolean[7];
+        if (ja != null) for (int i = 0; i < ja.length(); i++) { int d = ja.optInt(i, -1); if (d >= 0 && d < 7) days[d] = true; }
+        final String[] date = {isNew ? (sel.compareTo(Model.today()) >= 0 ? sel : Model.today()) : e.optString("date", "")};
+        if (date[0].isEmpty()) date[0] = Model.today();
+        final String[] start = {e.optString("start", "")}, end = {e.optString("end", "")};
+        final int[] lead = {isNew ? 15 : e.optInt("lead", 0)};
+        final String[] color = {isNew ? "azul" : e.optString("color", "azul")};
+
+        f.addView(label("Repete?"));
+        final LinearLayout repRow = new LinearLayout(this);
+        final LinearLayout whenBox = new LinearLayout(this);
+        whenBox.setOrientation(LinearLayout.VERTICAL);
+        final Runnable[] draw = new Runnable[1];
+        draw[0] = new Runnable() { public void run() {
+            repRow.removeAllViews();
+            String[] opts = {"Uma vez", "Toda semana"};
+            for (int i = 0; i < 2; i++) {
+                final boolean w = i == 1;
+                TextView p = pill(opts[i], weekly[0] == w);
+                p.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { weekly[0] = w; draw[0].run(); } });
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, dp(38), 1);
+                l.setMargins(dp(2), 0, dp(2), 0);
+                repRow.addView(p, l);
+            }
+            whenBox.removeAllViews();
+            if (weekly[0]) {
+                LinearLayout dayRow = new LinearLayout(MainActivity.this);
+                for (int i = 0; i < 7; i++) {
+                    final int k = i;
+                    TextView p = pill(Model.DOW1[i], days[i]);
+                    p.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { days[k] = !days[k]; draw[0].run(); } });
+                    LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, dp(38), 1);
+                    l.setMargins(dp(2), dp(10), dp(2), 0);
+                    dayRow.addView(p, l);
+                }
+                whenBox.addView(dayRow);
+            } else {
+                final TextView db = pill(Model.longDate(date[0]), false);
+                db.setPadding(dp(16), dp(10), dp(16), dp(10));
+                db.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                    pickDate(date[0], new TimeSet() { public void set(String x) { if (!x.isEmpty()) { date[0] = x; draw[0].run(); } } });
+                } });
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(WRAP, WRAP);
+                l.topMargin = dp(10);
+                whenBox.addView(db, l);
+            }
+        } };
+        draw[0].run();
+        f.addView(repRow);
+        f.addView(whenBox);
+
+        f.addView(label("Horário"));
+        LinearLayout tr = new LinearLayout(this);
+        tr.setGravity(Gravity.CENTER_VERTICAL);
+        final TextView sb = pill(start[0].isEmpty() ? "Início" : start[0], false);
+        sb.setPadding(dp(18), dp(10), dp(18), dp(10));
+        final TextView eb = pill(end[0].isEmpty() ? "Fim" : end[0], false);
+        eb.setPadding(dp(18), dp(10), dp(18), dp(10));
+        sb.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            pickTime(start[0], new TimeSet() { public void set(String x) { start[0] = x; sb.setText(x.isEmpty() ? "Início" : x); } });
+        } });
+        eb.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            pickTime(end[0].isEmpty() ? start[0] : end[0], new TimeSet() { public void set(String x) { end[0] = x; eb.setText(x.isEmpty() ? "Fim" : x); } });
+        } });
+        tr.addView(sb);
+        TextView dash = text("  até  ", 14, MUTED, REGULAR);
+        tr.addView(dash);
+        tr.addView(eb);
+        f.addView(tr);
+
+        f.addView(label("Avisar"));
+        final LinearLayout leadRow = new LinearLayout(this);
+        final int[] leads = {0, 10, 30, 60, 120};
+        final String[] leadNames = {"Na hora", "10 min", "30 min", "1 h", "2 h"};
+        final boolean[] remindOn = {e.optBoolean("remind", true)};
+        final Runnable[] drawLead = new Runnable[1];
+        drawLead[0] = new Runnable() { public void run() {
+            leadRow.removeAllViews();
+            TextView off = pill("Não", !remindOn[0]);
+            off.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { remindOn[0] = false; drawLead[0].run(); } });
+            LinearLayout.LayoutParams l0 = new LinearLayout.LayoutParams(0, dp(36), 1);
+            l0.setMargins(dp(2), 0, dp(2), 0);
+            leadRow.addView(off, l0);
+            for (int i = 0; i < leads.length; i++) {
+                final int k = i;
+                TextView p = pill(leadNames[i], remindOn[0] && lead[0] == leads[i]);
+                p.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                p.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { remindOn[0] = true; lead[0] = leads[k]; drawLead[0].run(); } });
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, dp(36), 1);
+                l.setMargins(dp(2), 0, dp(2), 0);
+                leadRow.addView(p, l);
+            }
+        } };
+        drawLead[0].run();
+        f.addView(leadRow);
+
+        f.addView(label("Cor"));
+        final LinearLayout colorRow = new LinearLayout(this);
+        final Runnable[] drawColors = new Runnable[1];
+        drawColors[0] = new Runnable() { public void run() {
+            colorRow.removeAllViews();
+            for (final String k : Model.COLOR_KEYS) {
+                View dot = new View(MainActivity.this);
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                g.setColor(Model.color(k, dark));
+                if (k.equals(color[0])) g.setStroke(dp(3), INK);
+                dot.setBackground(g);
+                dot.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { color[0] = k; drawColors[0].run(); } });
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(dp(32), dp(32));
+                l.setMargins(dp(3), 0, dp(5), dp(8));
+                colorRow.addView(dot, l);
+            }
+        } };
+        drawColors[0].run();
+        f.addView(colorRow);
+
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+                .setTitle(isNew ? "Novo compromisso" : "Editar compromisso")
+                .setView(wrap(f))
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Salvar", null);
+        if (!isNew) b.setNeutralButton("Excluir", null);
+        final AlertDialog dlg = b.create();
+        dlg.setOnShowListener(new DialogInterface.OnShowListener() { public void onShow(DialogInterface di) {
+            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                String t = title.getText().toString().trim();
+                if (t.isEmpty()) { title.setError("Dê um nome"); return; }
+                if (start[0].isEmpty()) { Toast.makeText(MainActivity.this, "Escolha o horário de início", Toast.LENGTH_SHORT).show(); return; }
+                if (!end[0].isEmpty() && Model.parseTime(end[0]) <= Model.parseTime(start[0])) {
+                    Toast.makeText(MainActivity.this, "O fim precisa ser depois do início", Toast.LENGTH_SHORT).show(); return; }
+                JSONArray d = new JSONArray();
+                if (weekly[0]) {
+                    for (int i = 0; i < 7; i++) if (days[i]) d.put(i);
+                    if (d.length() == 0) { Toast.makeText(MainActivity.this, "Escolha pelo menos um dia", Toast.LENGTH_SHORT).show(); return; }
+                }
+                try {
+                    if (isNew) e.put("id", Model.newId("e"));
+                    e.put("type", "event").put("title", t).put("note", note.getText().toString().trim())
+                            .put("days", d).put("date", weekly[0] ? "" : date[0]).put("start", start[0]).put("end", end[0])
+                            .put("lead", lead[0]).put("remind", remindOn[0]).put("color", color[0]);
+                } catch (JSONException ignored) { }
+                Model.putTask(MainActivity.this, e);
+                dlg.dismiss();
+                changed();
+            } });
+            if (!isNew) dlg.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                confirmDelete("Excluir o compromisso \"" + e.optString("title") + "\"?", new Runnable() { public void run() {
+                    try { e.put("deleted", true); } catch (JSONException ignored) { }
+                    Model.putTask(MainActivity.this, e);
+                    dlg.dismiss();
+                    changed();
+                } });
+            } });
+        } });
+        dlg.show();
+    }
+
     View wrap(View v) {
         ScrollView s = new ScrollView(this);
         s.addView(v);
@@ -676,7 +1145,24 @@ public class MainActivity extends Activity {
         nb.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { openNotificationSettings(); } });
         f.addView(nb, new LinearLayout.LayoutParams(WRAP, WRAP));
 
-        TextView tip = text("Pra editar ou excluir um hábito ou tarefa, segure o dedo em cima dele.", 13, MUTED, REGULAR);
+        f.addView(label("Atualização"));
+        final TextView ub = pill("Procurar atualização · versão " + Updater.currentVersion(this), false);
+        ub.setPadding(dp(16), dp(10), dp(16), dp(10));
+        ub.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            ub.setText("Procurando…");
+            Updater.check(MainActivity.this, null, new Updater.Progress() { public void done(boolean ok, String msg) {
+                if ("nova".equals(msg)) {
+                    ub.setText("Baixando a versão nova…");
+                    Updater.downloadAndInstall(MainActivity.this, new Updater.Progress() { public void done(boolean ok2, String m2) {
+                        ub.setText(ok2 ? "Confirme a instalação" : m2);
+                    } });
+                } else ub.setText("atual".equals(msg) ? "Você já está na versão mais nova" : msg);
+                render();
+            } });
+        } });
+        f.addView(ub, new LinearLayout.LayoutParams(WRAP, WRAP));
+
+        TextView tip = text("Compromissos: toque pra editar. Hábitos e tarefas: segure o dedo em cima pra editar ou excluir.", 13, MUTED, REGULAR);
         tip.setPadding(dp(4), dp(20), 0, dp(6));
         f.addView(tip);
 

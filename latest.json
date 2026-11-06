@@ -1,4 +1,4 @@
 {
-  "android": { "version": 5, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.apk", "notes": "Visual novo: cores por hábito, resumo do dia e da semana" },
-  "windows": { "version": 5, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.exe", "notes": "Visual novo: cores por hábito, resumo do dia e da semana" }
+  "android": { "version": 6, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.apk", "notes": "Compromissos, visão de semana e mês" },
+  "windows": { "version": 6, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.exe", "notes": "Compromissos, visão de semana e mês" }
 }
