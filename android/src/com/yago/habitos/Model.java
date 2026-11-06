@@ -328,6 +328,7 @@ public final class Model {
         public int minutes = -1;
         public boolean done, overdue;
         public int streak;
+        public String color = "";
     }
 
     /** Itens do dia, já ordenados: hábitos e tarefas com horário por hora, sem horário no fim. */
@@ -344,6 +345,7 @@ public final class Model {
             it.minutes = timeOf(h, date);
             it.done = isMarked(c, date, it.id);
             if (date.equals(today)) it.streak = streak(c, h);
+            it.color = colorKey(h);
             out.add(it);
         }
         for (JSONObject t : tasks(c)) {
@@ -414,6 +416,97 @@ public final class Model {
             d = addDays(d, -1);
         }
         return n;
+    }
+
+
+    // ---------------- cores ----------------
+
+    public static final String[] COLOR_KEYS = {"verde", "azul", "roxo", "rosa", "laranja", "amarelo", "ciano"};
+    public static final String[] COLOR_NAMES = {"Verde", "Azul", "Roxo", "Rosa", "Laranja", "Amarelo", "Ciano"};
+
+    public static int color(String key, boolean dark) {
+        switch (key) {
+            case "azul": return dark ? 0xFF6EA8E8 : 0xFF3F7CC4;
+            case "roxo": return dark ? 0xFFA48BE6 : 0xFF7556C4;
+            case "rosa": return dark ? 0xFFE88AA6 : 0xFFC4517A;
+            case "laranja": return dark ? 0xFFF0A866 : 0xFFD07A2A;
+            case "amarelo": return dark ? 0xFFE3C55E : 0xFFB08A16;
+            case "ciano": return dark ? 0xFF62C8D4 : 0xFF2394A3;
+            default: return dark ? 0xFF7FD1AE : 0xFF3E8E7E;
+        }
+    }
+
+    public static String colorKey(JSONObject h) {
+        String k = h.optString("color", "");
+        if (!k.isEmpty()) return k;
+        switch (h.optString("id")) {
+            case "acordar": return "laranja";
+            case "devocional": return "roxo";
+            case "concurso": return "azul";
+            case "escola": return "ciano";
+            case "revisao": return "azul";
+            case "igreja": return "roxo";
+            case "telas": return "verde";
+            case "leitura": return "amarelo";
+            case "dormir": return "rosa";
+        }
+        return "verde";
+    }
+
+    // ---------------- resumos ----------------
+
+    /** Próxima tarefa pendente com data (hoje ou depois), ou null. */
+    public static JSONObject nextTask(Context c) {
+        String today = today();
+        int nowMin = Calendar.getInstance().get(Calendar.HOUR_OF_DAY) * 60 + Calendar.getInstance().get(Calendar.MINUTE);
+        for (JSONObject t : tasks(c)) {
+            if (t.optBoolean("done")) continue;
+            String d = t.optString("date", "");
+            if (d.isEmpty() || d.compareTo(today) < 0) continue;
+            if (d.equals(today)) {
+                int m = parseTime(t.optString("time", ""));
+                if (m >= 0 && m < nowMin) continue;
+            }
+            return t;
+        }
+        return null;
+    }
+
+    public static String relDay(String d) {
+        String today = today();
+        if (d.equals(today)) return "hoje";
+        if (d.equals(addDays(today, 1))) return "amanhã";
+        long n = Math.round((toMillis(d) - toMillis(today)) / 86400000.0);
+        if (n < 7) return DOW[dow(d)].toLowerCase();
+        return "em " + n + " dias";
+    }
+
+    /** Dias seguidos com tudo feito (contando hoje se já estiver completo). */
+    public static int perfectStreak(Context c) {
+        String d = today();
+        int[] p = progress(c, d);
+        if (p[1] == 0 || p[0] < p[1]) d = addDays(d, -1);
+        int n = 0, guard = 0;
+        while (d.compareTo(START) >= 0 && guard++ < 400) {
+            p = progress(c, d);
+            if (p[1] > 0 && p[0] == p[1]) n++; else break;
+            d = addDays(d, -1);
+        }
+        return n;
+    }
+
+    public static int bestHabitStreak(Context c) {
+        int best = 0;
+        for (JSONObject h : habits(c)) best = Math.max(best, streak(c, h));
+        return best;
+    }
+
+    public static String greeting() {
+        int h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+        if (h < 5) return "Boa madrugada";
+        if (h < 12) return "Bom dia";
+        if (h < 18) return "Boa tarde";
+        return "Boa noite";
     }
 
     // ---------------- concurso ----------------

@@ -10,7 +10,7 @@ using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("Hábitos")]
 [assembly: System.Reflection.AssemblyProduct("Hábitos")]
-[assembly: System.Reflection.AssemblyVersion("2.2.0.0")]
+[assembly: System.Reflection.AssemblyVersion("2.3.0.0")]
 
 namespace Habitos
 {
@@ -179,20 +179,26 @@ namespace Habitos
             base.WndProc(ref m);
         }
 
+        Dictionary<string, object> next;
+        const int HeroTop = 76, HeroH = 76, NextH = 52, RowH = 40, FootH = 96;
+
+        int ListTop() { return Theme.P(HeroTop + HeroH + 12) + (next != null ? Theme.P(NextH + 10) : 0) + Theme.P(4); }
+
         public void Reload()
         {
             if (DateTime.Today > sel && sel == lastToday) sel = DateTime.Today;
             lastToday = DateTime.Today;
             items = Model.ItemsFor(sel);
-            // Pendentes primeiro; feitos no fim.
             items = items.Where(i => !i.Done).Concat(items.Where(i => i.Done)).ToList();
-            int rows = items.Count;
-            int h = Theme.P(118) + Math.Max(1, rows) * Theme.P(40) + Theme.P(14);
+            next = sel == DateTime.Today ? Model.NextTask() : null;
+            int h = ListTop() + Math.Max(1, items.Count) * Theme.P(RowH) + Theme.P(FootH) + Theme.P(14);
             int max = Screen.FromControl(this).WorkingArea.Height - Theme.P(40);
             Height = Math.Min(h, max);
             Invalidate();
         }
         DateTime lastToday = DateTime.Today;
+
+        static Color Alpha(Color c, int a) { return Color.FromArgb(a, c.R, c.G, c.B); }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -201,76 +207,166 @@ namespace Habitos
             g.Clear(Theme.Bg);
             float pad = Theme.P(18), w = Width;
             var today = DateTime.Today;
+            bool isToday = sel == today;
+            var fmtL = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap, LineAlignment = StringAlignment.Center };
 
             // Cabeçalho
             using (var f = Theme.F(9f)) using (var b = new SolidBrush(Theme.Muted))
-                g.DrawString(Model.LongDate(sel), f, b, pad - Theme.P(2), Theme.P(14));
-            string title = sel == today ? "Hoje" : (sel == today.AddDays(-1) ? "Ontem" : Model.DowNames[(int)sel.DayOfWeek]);
+                g.DrawString(isToday ? Model.Greeting() : "Histórico", f, b, new RectangleF(pad - Theme.P(2), Theme.P(14), w - Theme.P(150), Theme.P(18)), fmtL);
+            string title = isToday ? "Hoje" : (sel == today.AddDays(-1) ? "Ontem" : Model.DowNames[(int)sel.DayOfWeek]);
+            float tw;
             using (var f = Theme.Light(22f)) using (var b = new SolidBrush(Theme.Ink))
+            {
+                tw = g.MeasureString(title, f).Width;
                 g.DrawString(title, f, b, pad - Theme.P(5), Theme.P(30));
-            rHeader = new RectangleF(0, 0, w - Theme.P(110), Theme.P(78));
+            }
+            using (var f = Theme.F(9f)) using (var b = new SolidBrush(Theme.Muted))
+                g.DrawString(Model.DowNames[(int)sel.DayOfWeek].ToLower() + ", " + Model.ShortDate(sel), f, b, pad - Theme.P(5) + tw, Theme.P(46));
+            rHeader = new RectangleF(0, 0, w - Theme.P(130), Theme.P(72));
 
-            // Botões: ‹ › + ⋯
-            float bs = Theme.P(28), by = Theme.P(16);
-            rMenu = new RectangleF(w - pad - bs, by, bs, bs);
-            rPlus = new RectangleF(rMenu.X - bs - Theme.P(4), by, bs, bs);
-            rNext = new RectangleF(rPlus.X - bs - Theme.P(10), by, bs * 0.8f, bs);
+            float bs = Theme.P(28), by = Theme.P(14);
+            rMenu = new RectangleF(w - pad - bs + Theme.P(4), by, bs, bs);
+            rPlus = new RectangleF(rMenu.X - bs - Theme.P(2), by, bs, bs);
+            rNext = new RectangleF(rPlus.X - bs * 0.8f - Theme.P(8), by, bs * 0.8f, bs);
             rPrev = new RectangleF(rNext.X - bs * 0.8f, by, bs * 0.8f, bs);
-            bool canPrev = sel > Model.Start, canNext = sel < today;
-            IconButton(g, rPrev, "prev", canPrev ? Theme.Muted : Theme.Line);
-            IconButton(g, rNext, "next", canNext ? Theme.Muted : Theme.Line);
+            IconButton(g, rPrev, "prev", sel > Model.Start ? Theme.Muted : Theme.Line);
+            IconButton(g, rNext, "next", sel < today ? Theme.Muted : Theme.Line);
             IconButton(g, rPlus, "plus", Theme.Ink);
             IconButton(g, rMenu, "menu", Theme.Ink);
 
-            // Progresso
+            // Cartão de resumo com anel
             var p = Model.Progress(sel);
-            float py = Theme.P(80), ph = Theme.P(5);
-            string cnt = p[0] + "/" + p[1];
-            using (var f = Theme.F(9f, true))
+            float frac = p[1] == 0 ? 0 : (float)p[0] / p[1];
+            var hero = new RectangleF(Theme.P(10), Theme.P(HeroTop), w - Theme.P(20), Theme.P(HeroH));
+            using (var path = Theme.Round(hero, Theme.P(16))) using (var b = new SolidBrush(Theme.Surface)) g.FillPath(b, path);
+            float rs = Theme.P(52), rx = hero.X + Theme.P(14), ry = hero.Y + (hero.Height - rs) / 2;
+            using (var pen = new Pen(Theme.Line, Theme.P(6))) g.DrawEllipse(pen, rx, ry, rs, rs);
+            if (frac > 0) using (var pen = new Pen(Theme.Accent, Theme.P(6)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.DrawArc(pen, rx, ry, rs, rs, -90, Math.Max(4, 360 * frac));
+            using (var f = Theme.F(9.5f, true)) using (var b = new SolidBrush(Theme.Ink))
+                g.DrawString((int)Math.Round(frac * 100) + "%", f, b, new RectangleF(rx, ry, rs, rs), new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+            int left = p[1] - p[0];
+            string headline = p[1] == 0 ? "Dia livre" : left == 0 ? "Tudo feito!" : p[0] == 0 ? "Vamos começar" : "Faltam " + left;
+            float hx = rx + rs + Theme.P(16), hw = hero.Right - hx - Theme.P(10);
+            int ps = Model.PerfectStreak();
+            float ty = hero.Y + (ps > 0 ? Theme.P(10) : Theme.P(18));
+            using (var f = Theme.F(12f, true)) using (var b = new SolidBrush(Theme.Ink)) g.DrawString(headline, f, b, new RectangleF(hx, ty, hw, Theme.P(22)), fmtL);
+            using (var f = Theme.F(9f)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString(p[0] + " de " + p[1] + " concluídos", f, b, new RectangleF(hx, ty + Theme.P(22), hw, Theme.P(18)), fmtL);
+            if (ps > 0) using (var f = Theme.F(8.5f, true)) using (var b = new SolidBrush(Theme.Accent))
+                g.DrawString(ps + (ps == 1 ? " dia seguido" : " dias seguidos") + " com tudo feito", f, b, new RectangleF(hx, ty + Theme.P(40), hw, Theme.P(18)), fmtL);
+
+            // A seguir
+            float y = Theme.P(HeroTop + HeroH + 12);
+            if (next != null)
             {
-                var sz = g.MeasureString(cnt, f);
-                float bw = w - pad * 2 - sz.Width - Theme.P(8);
-                using (var path = Theme.Round(new RectangleF(pad, py, bw, ph), ph / 2)) using (var b = new SolidBrush(Theme.Line)) g.FillPath(b, path);
-                if (p[1] > 0 && p[0] > 0)
-                    using (var path = Theme.Round(new RectangleF(pad, py, Math.Max(ph, bw * p[0] / p[1]), ph), ph / 2)) using (var b = new SolidBrush(Theme.Accent)) g.FillPath(b, path);
-                using (var b = new SolidBrush(Theme.Accent)) g.DrawString(cnt, f, b, w - pad - sz.Width + Theme.P(2), py - sz.Height / 2 + ph / 2);
+                var nr = new RectangleF(Theme.P(10), y, w - Theme.P(20), Theme.P(NextH));
+                using (var path = Theme.Round(nr, Theme.P(14))) using (var b = new SolidBrush(Alpha(Theme.Accent, 28))) g.FillPath(b, path);
+                var d = Model.Str(next, "date"); var tm = Model.Str(next, "time");
+                string when = Model.RelDay(d) + (tm != "" ? " · " + tm : "");
+                float ww;
+                using (var f = Theme.F(8.5f, true)) using (var b = new SolidBrush(Theme.Accent))
+                {
+                    ww = g.MeasureString(when, f).Width;
+                    g.DrawString(when, f, b, new RectangleF(nr.Right - ww - Theme.P(12), nr.Y, ww + 4, nr.Height), fmtL);
+                    g.DrawString("A SEGUIR", Theme.F(7.5f, true), b, nr.X + Theme.P(12), nr.Y + Theme.P(7));
+                }
+                using (var f = Theme.F(10f, true)) using (var b = new SolidBrush(Theme.Ink))
+                    g.DrawString(Model.Str(next, "title"), f, b, new RectangleF(nr.X + Theme.P(12), nr.Y + Theme.P(20), nr.Width - ww - Theme.P(36), Theme.P(24)), fmtL);
+                y += Theme.P(NextH + 10);
             }
-            int left = (int)(Model.Exam - today).TotalDays;
-            if (left >= 0)
-                using (var f = Theme.F(8.5f)) using (var b = new SolidBrush(Theme.Muted))
-                    g.DrawString(left == 0 ? "Hoje é a prova do concurso" : left + " dias pra prova", f, b, pad - Theme.P(2), py + Theme.P(10));
+            y += Theme.P(4);
 
             // Itens
             hits.Clear();
-            float y = Theme.P(118), rh = Theme.P(40);
+            float rh = Theme.P(RowH);
+            float listEnd = Height - Theme.P(FootH) - Theme.P(8);
             if (items.Count == 0)
                 using (var f = Theme.F(9.5f)) using (var b = new SolidBrush(Theme.Muted))
-                    g.DrawString("Nada pra este dia. Clique em + pra criar.", f, b, pad - Theme.P(2), y + Theme.P(8));
-            var fmt = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap, LineAlignment = StringAlignment.Center };
+                    g.DrawString("Nada pra este dia. Clique em + pra criar.", f, b, pad - Theme.P(2), y + Theme.P(10));
             foreach (var it in items)
             {
-                if (y + rh > Height) break;
+                if (y + rh > listEnd + 1) break;
                 var row = new RectangleF(Theme.P(8), y, w - Theme.P(16), rh - Theme.P(2));
                 string key = it.Kind + it.Id;
                 if (key == hoverKey)
                     using (var path = Theme.Round(row, Theme.P(10))) using (var b = new SolidBrush(Theme.Hover)) g.FillPath(b, path);
                 float cs = Theme.P(18);
-                Theme.DrawCheck(g, new RectangleF(pad, y + (rh - cs) / 2 - Theme.P(1), cs, cs), it.Done, it.Overdue, it.Kind == "t");
+                var col = it.Overdue ? Theme.Late : (it.Color == "" ? Theme.Accent : Model.ColorOf(it.Color));
+                DrawColorCheck(g, new RectangleF(pad, y + (rh - cs) / 2 - Theme.P(1), cs, cs), it.Done, col, it.Kind == "t");
 
-                string right = it.Overdue ? "atrasada" : (it.Minutes >= 0 ? Model.HHMM(it.Minutes) : "");
-                float rx = w - pad;
+                string right = it.Overdue ? "atrasada" : (it.Streak >= 2 ? it.Streak + "d · " : "") + (it.Minutes >= 0 ? Model.HHMM(it.Minutes) : "");
+                float rxx = w - pad;
                 if (right != "")
                     using (var f = Theme.F(8.5f)) using (var b = new SolidBrush(it.Overdue ? Theme.Late : Theme.Muted))
                     {
                         var sz = g.MeasureString(right, f);
-                        rx = w - pad - sz.Width;
-                        g.DrawString(right, f, b, new RectangleF(rx, y, sz.Width + 2, rh - Theme.P(2)), fmt);
+                        rxx = w - pad - sz.Width;
+                        g.DrawString(right, f, b, new RectangleF(rxx, y, sz.Width + 2, rh - Theme.P(2)), fmtL);
                     }
                 float tx = pad + cs + Theme.P(12);
-                using (var f = Theme.F(10f, !it.Done)) using (var b = new SolidBrush(it.Done ? Theme.Faint : Theme.Ink))
-                    g.DrawString(it.Title, it.Done ? new Font(f, FontStyle.Strikeout) : f, b, new RectangleF(tx, y, rx - tx - Theme.P(8), rh - Theme.P(2)), fmt);
+                using (var f = Theme.F(10f, !it.Done)) using (var fs = new Font(f, FontStyle.Strikeout)) using (var b = new SolidBrush(it.Done ? Theme.Faint : Theme.Ink))
+                    g.DrawString(it.Title, it.Done ? fs : f, b, new RectangleF(tx, y, rxx - tx - Theme.P(8), rh - Theme.P(2)), fmtL);
                 hits.Add(new KeyValuePair<RectangleF, Model.Item>(row, it));
                 y += rh;
+            }
+
+            // Últimos 7 dias
+            var foot = new RectangleF(Theme.P(10), Height - Theme.P(FootH) - Theme.P(4), w - Theme.P(20), Theme.P(FootH) - Theme.P(6));
+            using (var pen = new Pen(Theme.Line)) g.DrawLine(pen, foot.X + Theme.P(8), foot.Y, foot.Right - Theme.P(8), foot.Y);
+            int tot = 0, dn = 0;
+            var vals = new float[7];
+            for (int i = 0; i < 7; i++)
+            {
+                var d = today.AddDays(i - 6);
+                if (d < Model.Start) { vals[i] = -1; continue; }
+                var pp = Model.Progress(d); tot += pp[1]; dn += pp[0];
+                vals[i] = pp[1] == 0 ? 0 : (float)pp[0] / pp[1];
+            }
+            using (var f = Theme.F(8.5f, true)) using (var b = new SolidBrush(Theme.Muted))
+                g.DrawString("ÚLTIMOS 7 DIAS", f, b, foot.X + Theme.P(8), foot.Y + Theme.P(10));
+            using (var f = Theme.F(8.5f, true)) using (var b = new SolidBrush(Theme.Accent))
+            {
+                string pc = (tot == 0 ? 0 : (int)Math.Round(100.0 * dn / tot)) + "%";
+                var sz = g.MeasureString(pc, f);
+                g.DrawString(pc, f, b, foot.Right - sz.Width - Theme.P(8), foot.Y + Theme.P(10));
+            }
+            float barTop = foot.Y + Theme.P(32), barH = Theme.P(34), bw = Theme.P(10);
+            for (int i = 0; i < 7; i++)
+            {
+                float cx = foot.X + Theme.P(8) + (foot.Width - Theme.P(16)) * (i + 0.5f) / 7;
+                var bg = new RectangleF(cx - bw / 2, barTop, bw, barH);
+                using (var path = Theme.Round(bg, bw / 2)) using (var b = new SolidBrush(Theme.Line)) g.FillPath(b, path);
+                if (vals[i] > 0)
+                {
+                    float hh = Math.Max(bw, barH * vals[i]);
+                    using (var path = Theme.Round(new RectangleF(cx - bw / 2, barTop + barH - hh, bw, hh), bw / 2))
+                    using (var b = new SolidBrush(vals[i] >= 1 ? Theme.Accent : Alpha(Theme.Accent, 150))) g.FillPath(b, path);
+                }
+                var d = today.AddDays(i - 6);
+                using (var f = Theme.F(7.5f, i == 6)) using (var b = new SolidBrush(i == 6 ? Theme.Ink : Theme.Muted))
+                    g.DrawString(Model.Dow1[(int)d.DayOfWeek], f, b, new RectangleF(cx - Theme.P(10), barTop + barH + Theme.P(2), Theme.P(20), Theme.P(16)), new StringFormat { Alignment = StringAlignment.Center });
+            }
+        }
+
+        static void DrawColorCheck(Graphics g, RectangleF r, bool on, Color col, bool square)
+        {
+            float rad = square ? r.Width * 0.28f : r.Width / 2;
+            using (var path = Theme.Round(r, rad))
+            {
+                if (on)
+                {
+                    using (var b = new SolidBrush(col)) g.FillPath(b, path);
+                    using (var pen = new Pen(Theme.Bg, r.Width * 0.12f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+                        g.DrawLines(pen, new[] {
+                            new PointF(r.X + r.Width * 0.28f, r.Y + r.Height * 0.52f),
+                            new PointF(r.X + r.Width * 0.44f, r.Y + r.Height * 0.67f),
+                            new PointF(r.X + r.Width * 0.73f, r.Y + r.Height * 0.37f) });
+                }
+                else
+                {
+                    using (var b = new SolidBrush(Alpha(col, 30))) g.FillPath(b, path);
+                    using (var pen = new Pen(col, Math.Max(1.5f, 2f * Theme.S))) g.DrawPath(pen, path);
+                }
             }
         }
 
@@ -446,7 +542,7 @@ namespace Habitos
         {
             bool isNew = existing == null;
             var h = Copy(existing);
-            var f = new DarkForm(isNew ? "Novo hábito" : "Editar hábito", 380, 400);
+            var f = new DarkForm(isNew ? "Novo hábito" : "Editar hábito", 380, 404);
             f.Lbl("NOME", 22, 18);
             var title = f.Box(Model.Str(h, "title"), 22, 40, 336);
             f.Lbl("DETALHE (OPCIONAL)", 22, 82);
@@ -457,10 +553,29 @@ namespace Habitos
             for (int i = 0; i < 7; i++) pills[i] = f.Pill(Model.Dow1[i], days.Contains(i), 22 + i * 48, 168, 42);
             f.Lbl("HORÁRIO (HH:MM, VAZIO = SEM HORÁRIO)", 22, 214);
             var time = f.Box(Model.Str(h, "time"), 22, 236, 100);
-            var remind = f.Check("Lembrete no horário", Model.Bool(h, "remind", true), 22, 278);
-            var save = f.Btn("Salvar", 238, 342, 120, true);
-            f.Btn("Cancelar", 110, 342, 120).Click += (s, e) => f.Close();
-            if (!isNew) f.Btn("Excluir", 22, 342, 80).Click += (s, e) => { f.Close(); Delete("h", Model.Str(h, "id")); };
+            var remind = f.Check("Lembrete no horário", Model.Bool(h, "remind", true), 200, 238);
+            f.Lbl("COR", 22, 282);
+            string color = isNew ? Model.ColorKeys[new Random().Next(Model.ColorKeys.Length)] : Model.ColorKey(h);
+            var swatches = new List<Panel>();
+            for (int i = 0; i < Model.ColorKeys.Length; i++)
+            {
+                var key = Model.ColorKeys[i];
+                var sw = new Panel { Location = new Point(Theme.P(22 + i * 40), Theme.P(302)), Size = new Size(Theme.P(30), Theme.P(30)), Cursor = Cursors.Hand, Tag = key };
+                sw.Paint += (s2, e2) =>
+                {
+                    Theme.Smooth(e2.Graphics);
+                    e2.Graphics.Clear(Theme.Bg);
+                    var rr = new RectangleF(Theme.P(3), Theme.P(3), Theme.P(24), Theme.P(24));
+                    using (var b = new SolidBrush(Model.ColorOf((string)((Panel)s2).Tag))) e2.Graphics.FillEllipse(b, rr);
+                    if ((string)((Panel)s2).Tag == color) using (var pen = new Pen(Theme.Ink, Theme.P(2))) e2.Graphics.DrawEllipse(pen, Theme.P(1), Theme.P(1), Theme.P(28), Theme.P(28));
+                };
+                sw.Click += (s2, e2) => { color = (string)((Panel)s2).Tag; foreach (var x in swatches) x.Invalidate(); };
+                swatches.Add(sw);
+                f.Controls.Add(sw);
+            }
+            var save = f.Btn("Salvar", 238, 352, 120, true);
+            f.Btn("Cancelar", 110, 352, 120).Click += (s, e) => f.Close();
+            if (!isNew) f.Btn("Excluir", 22, 352, 80).Click += (s, e) => { f.Close(); Delete("h", Model.Str(h, "id")); };
             f.AcceptButton = save;
             save.Click += (s, e) =>
             {
@@ -474,7 +589,7 @@ namespace Habitos
                 if (isNew) { h["id"] = Model.NewId("h"); h["order"] = Model.NextOrder(); h["lead"] = 0; }
                 if (tm != Model.Str(h, "time")) h.Remove("times");
                 if (note.Text.Trim() != Model.Str(h, "note")) h.Remove("notes");
-                h["title"] = t; h["note"] = note.Text.Trim(); h["days"] = d; h["time"] = tm; h["remind"] = remind.Checked;
+                h["title"] = t; h["note"] = note.Text.Trim(); h["days"] = d; h["time"] = tm; h["remind"] = remind.Checked; h["color"] = color;
                 Model.PutHabit(h);
                 Program.SyncSoon();
                 f.Close();

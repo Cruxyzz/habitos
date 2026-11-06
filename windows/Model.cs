@@ -309,6 +309,7 @@ namespace Habitos
             public int Minutes = -1;
             public bool Done, Overdue;
             public int Streak;
+            public string Color = "";
         }
 
         public static List<Item> ItemsFor(DateTime date)
@@ -322,7 +323,7 @@ namespace Habitos
                 outl.Add(new Item
                 {
                     Kind = "h", Id = id, Title = Str(h, "title"), Sub = HabitSub(h, date), Minutes = TimeOf(h, date),
-                    Done = Marked(date, id), Streak = date == today ? Streak(h) : 0
+                    Done = Marked(date, id), Streak = date == today ? Streak(h) : 0, Color = ColorKey(h)
                 });
             }
             var tk = Key(today); var dk = Key(date);
@@ -375,6 +376,90 @@ namespace Habitos
                 d = d.AddDays(-1);
             }
             return n;
+        }
+
+
+        // ---------- cores e resumos ----------
+
+        public static readonly string[] ColorKeys = { "verde", "azul", "roxo", "rosa", "laranja", "amarelo", "ciano" };
+
+        public static System.Drawing.Color ColorOf(string key)
+        {
+            switch (key)
+            {
+                case "azul": return System.Drawing.Color.FromArgb(0x6E, 0xA8, 0xE8);
+                case "roxo": return System.Drawing.Color.FromArgb(0xA4, 0x8B, 0xE6);
+                case "rosa": return System.Drawing.Color.FromArgb(0xE8, 0x8A, 0xA6);
+                case "laranja": return System.Drawing.Color.FromArgb(0xF0, 0xA8, 0x66);
+                case "amarelo": return System.Drawing.Color.FromArgb(0xE3, 0xC5, 0x5E);
+                case "ciano": return System.Drawing.Color.FromArgb(0x62, 0xC8, 0xD4);
+                default: return System.Drawing.Color.FromArgb(0x7F, 0xD1, 0xAE);
+            }
+        }
+
+        public static string ColorKey(Dictionary<string, object> h)
+        {
+            var k = Str(h, "color");
+            if (k != "") return k;
+            switch (Str(h, "id"))
+            {
+                case "acordar": return "laranja";
+                case "devocional": return "roxo";
+                case "concurso": return "azul";
+                case "escola": return "ciano";
+                case "revisao": return "azul";
+                case "igreja": return "roxo";
+                case "telas": return "verde";
+                case "leitura": return "amarelo";
+                case "dormir": return "rosa";
+            }
+            return "verde";
+        }
+
+        public static Dictionary<string, object> NextTask()
+        {
+            var tk = Key(DateTime.Today);
+            int nowMin = DateTime.Now.Hour * 60 + DateTime.Now.Minute;
+            foreach (var t in Tasks())
+            {
+                if (Bool(t, "done", false)) continue;
+                var d = Str(t, "date");
+                if (d == "" || string.Compare(d, tk, StringComparison.Ordinal) < 0) continue;
+                if (d == tk) { int m = ParseTime(Str(t, "time")); if (m >= 0 && m < nowMin) continue; }
+                return t;
+            }
+            return null;
+        }
+
+        public static string RelDay(string d)
+        {
+            var dt = ParseDate(d); var today = DateTime.Today;
+            if (dt == today) return "hoje";
+            if (dt == today.AddDays(1)) return "amanhã";
+            int n = (int)(dt - today).TotalDays;
+            if (n < 7) return DowNames[(int)dt.DayOfWeek].ToLower();
+            return "em " + n + " dias";
+        }
+
+        public static int PerfectStreak()
+        {
+            var d = DateTime.Today;
+            var p = Progress(d);
+            if (p[1] == 0 || p[0] < p[1]) d = d.AddDays(-1);
+            int n = 0;
+            while (d >= Start && n < 400)
+            {
+                p = Progress(d);
+                if (p[1] > 0 && p[0] == p[1]) n++; else break;
+                d = d.AddDays(-1);
+            }
+            return n;
+        }
+
+        public static string Greeting()
+        {
+            int h = DateTime.Now.Hour;
+            return h < 5 ? "Boa madrugada" : h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
         }
 
         // ---------- concurso ----------

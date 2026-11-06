@@ -158,89 +158,162 @@ public class MainActivity extends Activity {
         root.removeAllViews();
         final String today = Model.today();
         int[] prog = Model.progress(this, sel);
+        boolean isToday = sel.equals(today);
 
-        // Linha de cima: data + ajustes
+        // Linha de cima: saudação + ajustes
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.addView(text(Model.longDate(sel), 14, MUTED, REGULAR), new LinearLayout.LayoutParams(0, WRAP, 1));
-        TextView gear = text("Ajustes", 14, MUTED, MEDIUM);
-        gear.setPadding(dp(12), dp(6), dp(12), dp(6));
+        top.addView(text(isToday ? Model.greeting() : Model.longDate(sel), 15, MUTED, REGULAR), new LinearLayout.LayoutParams(0, WRAP, 1));
+        TextView gear = text("Ajustes", 13, MUTED, MEDIUM);
+        gear.setPadding(dp(14), dp(7), dp(14), dp(7));
         gear.setBackground(round(0, LINE, 99));
         gear.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showSettings(); } });
         top.addView(gear);
         root.addView(top);
 
-        if (Updater.available != null) {
-            LinearLayout up = new LinearLayout(this);
-            up.setGravity(Gravity.CENTER_VERTICAL);
-            up.setPadding(dp(16), dp(12), dp(12), dp(12));
-            up.setBackground(round(SOFT, 0, 16));
-            LinearLayout ut = new LinearLayout(this);
-            ut.setOrientation(LinearLayout.VERTICAL);
-            ut.addView(text("Nova versão disponível", 15, INK, MEDIUM));
-            String notes = Updater.available.optString("notes", "");
-            if (!notes.isEmpty()) ut.addView(text(notes, 13, MUTED, REGULAR));
-            up.addView(ut, new LinearLayout.LayoutParams(0, WRAP, 1));
-            final TextView ub = text("Atualizar", 14, ON_ACCENT, MEDIUM);
-            ub.setPadding(dp(14), dp(8), dp(14), dp(8));
-            ub.setBackground(round(ACCENT, 0, 99));
-            ub.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
-                ub.setText("Baixando…");
-                Updater.downloadAndInstall(MainActivity.this, new Updater.Progress() { public void done(boolean ok, String msg) {
-                    ub.setText("Atualizar");
-                    if (!ok) Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
-                } });
-            } });
-            up.addView(ub);
-            root.addView(up, lp(MATCH, WRAP, dp(14)));
-        }
-
-        String title = sel.equals(today) ? "Hoje" : (sel.equals(Model.addDays(today, -1)) ? "Ontem" : Model.DOW[Model.dow(sel)]);
+        String title = isToday ? "Hoje" : (sel.equals(Model.addDays(today, -1)) ? "Ontem" : Model.DOW[Model.dow(sel)]);
         TextView h1 = text(title, 40, INK, DISPLAY);
         h1.setLetterSpacing(-0.02f);
-        root.addView(h1, lp(WRAP, WRAP, dp(2)));
+        root.addView(h1, lp(WRAP, WRAP, 0));
+        if (isToday) root.addView(text(Model.longDate(sel), 14, MUTED, REGULAR));
 
-        // Progresso
-        LinearLayout pr = new LinearLayout(this);
-        pr.setGravity(Gravity.CENTER_VERTICAL);
-        Bar bar = new Bar(this, prog[1] == 0 ? 0 : (float) prog[0] / prog[1]);
-        pr.addView(bar, new LinearLayout.LayoutParams(0, dp(6), 1));
-        TextView pct = text(prog[0] + " de " + prog[1], 14, MUTED, MEDIUM);
-        pct.setPadding(dp(12), 0, 0, 0);
-        pr.addView(pct);
-        root.addView(pr, lp(MATCH, WRAP, dp(14)));
+        updateBanner();
 
-        int left = Model.daysUntilExam();
-        if (left >= 0) {
-            TextView chip = text(left == 0 ? "Hoje é a prova do concurso" : left + (left == 1 ? " dia" : " dias") + " pra prova do concurso", 13, ACCENT, MEDIUM);
-            chip.setPadding(dp(12), dp(6), dp(12), dp(6));
-            chip.setBackground(round(SOFT, 0, 99));
-            root.addView(chip, lp(WRAP, WRAP, dp(14)));
+        // Cartão de resumo
+        LinearLayout hero = new LinearLayout(this);
+        hero.setGravity(Gravity.CENTER_VERTICAL);
+        hero.setPadding(dp(18), dp(18), dp(18), dp(18));
+        hero.setBackground(round(SURFACE, dark ? 0 : LINE, 22));
+        float frac = prog[1] == 0 ? 0 : (float) prog[0] / prog[1];
+        hero.addView(new Ring(this, frac), new LinearLayout.LayoutParams(dp(84), dp(84)));
+        LinearLayout ht = new LinearLayout(this);
+        ht.setOrientation(LinearLayout.VERTICAL);
+        ht.setPadding(dp(18), 0, 0, 0);
+        int left = prog[1] - prog[0];
+        String headline = prog[1] == 0 ? "Dia livre" : left == 0 ? "Tudo feito!" : prog[0] == 0 ? "Vamos começar" : "Faltam " + left;
+        ht.addView(text(headline, 20, INK, MEDIUM));
+        ht.addView(text(prog[0] + " de " + prog[1] + " concluídos", 14, MUTED, REGULAR));
+        int ps = Model.perfectStreak(this);
+        if (ps > 0) {
+            TextView st = text(ps + (ps == 1 ? " dia" : " dias") + " seguidos com tudo feito", 13, ACCENT, MEDIUM);
+            st.setPadding(0, dp(6), 0, 0);
+            ht.addView(st);
+        }
+        hero.addView(ht, new LinearLayout.LayoutParams(0, WRAP, 1));
+        root.addView(hero, lp(MATCH, WRAP, dp(18)));
+
+        // A seguir: próxima tarefa com data
+        JSONObject nx = isToday ? Model.nextTask(this) : null;
+        if (nx != null) {
+            LinearLayout nc = new LinearLayout(this);
+            nc.setGravity(Gravity.CENTER_VERTICAL);
+            nc.setPadding(dp(16), dp(14), dp(16), dp(14));
+            nc.setBackground(round(SOFT, 0, 18));
+            LinearLayout nt = new LinearLayout(this);
+            nt.setOrientation(LinearLayout.VERTICAL);
+            TextView lab = text("A SEGUIR", 11, ACCENT, MEDIUM);
+            lab.setLetterSpacing(0.1f);
+            nt.addView(lab);
+            TextView ntt = text(nx.optString("title"), 16, INK, MEDIUM);
+            ntt.setPadding(0, dp(2), 0, 0);
+            nt.addView(ntt);
+            nc.addView(nt, new LinearLayout.LayoutParams(0, WRAP, 1));
+            String d = nx.optString("date"), tm = nx.optString("time", "");
+            String when = Model.relDay(d) + (tm.isEmpty() ? "" : "\n" + tm);
+            TextView w = text(when, 13, ACCENT, MEDIUM);
+            w.setGravity(Gravity.END);
+            nc.addView(w);
+            final String nid = nx.optString("id");
+            nc.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View v) {
+                editTask(Model.taskById(MainActivity.this, nid)); return true; } });
+            root.addView(nc, lp(MATCH, WRAP, dp(10)));
         }
 
-        root.addView(weekStrip(today), lp(MATCH, WRAP, dp(22)));
+        root.addView(weekStrip(today), lp(MATCH, WRAP, dp(20)));
 
         // Itens
         List<Model.Item> items = Model.itemsFor(this, sel);
-        if (sel.compareTo(Model.START) < 0) {
-            root.addView(text("Os hábitos começam em 6 de novembro.", 15, MUTED, REGULAR), lp(WRAP, WRAP, dp(28)));
-        } else if (items.isEmpty()) {
-            root.addView(text("Nada pra este dia. Toque em + pra criar um hábito ou tarefa.", 15, MUTED, REGULAR), lp(WRAP, WRAP, dp(28)));
+        if (items.isEmpty()) {
+            TextView em = text(sel.compareTo(Model.START) < 0 ? "Nada registrado neste dia." : "Nada pra este dia.\nToque em + pra criar um hábito ou uma tarefa.", 15, MUTED, REGULAR);
+            em.setGravity(Gravity.CENTER);
+            em.setPadding(0, dp(28), 0, dp(12));
+            root.addView(em, lp(MATCH, WRAP, 0));
         }
         String[] names = {"Atrasadas", "Manhã", "Tarde", "Noite", "Qualquer hora"};
         for (int g = 0; g < names.length; g++) {
-            boolean header = false;
-            for (Model.Item it : items) {
-                if (groupOf(it) != g) continue;
-                if (!header) {
-                    TextView gh = text(names[g].toUpperCase(), 12, g == 0 ? LATE : MUTED, MEDIUM);
-                    gh.setLetterSpacing(0.08f);
-                    root.addView(gh, lp(WRAP, WRAP, dp(26)));
-                    header = true;
-                }
-                root.addView(row(it), lp(MATCH, WRAP, dp(8)));
-            }
+            int cnt = 0, done = 0;
+            for (Model.Item it : items) if (groupOf(it) == g) { cnt++; if (it.done) done++; }
+            if (cnt == 0) continue;
+            LinearLayout gh = new LinearLayout(this);
+            gh.setGravity(Gravity.CENTER_VERTICAL);
+            TextView gt = text(names[g].toUpperCase(), 12, g == 0 ? LATE : MUTED, MEDIUM);
+            gt.setLetterSpacing(0.08f);
+            gh.addView(gt, new LinearLayout.LayoutParams(0, WRAP, 1));
+            gh.addView(text(done + "/" + cnt, 12, MUTED, REGULAR));
+            root.addView(gh, lp(MATCH, WRAP, dp(26)));
+            for (Model.Item it : items) if (groupOf(it) == g) root.addView(row(it), lp(MATCH, WRAP, dp(8)));
         }
+
+        // Resumo da semana
+        if (sel.compareTo(Model.START) >= 0) root.addView(weekSummary(today), lp(MATCH, WRAP, dp(30)));
+    }
+
+    void updateBanner() {
+        if (Updater.available == null) return;
+        LinearLayout up = new LinearLayout(this);
+        up.setGravity(Gravity.CENTER_VERTICAL);
+        up.setPadding(dp(16), dp(12), dp(12), dp(12));
+        up.setBackground(round(SOFT, 0, 16));
+        LinearLayout ut = new LinearLayout(this);
+        ut.setOrientation(LinearLayout.VERTICAL);
+        ut.addView(text("Nova versão disponível", 15, INK, MEDIUM));
+        String notes = Updater.available.optString("notes", "");
+        if (!notes.isEmpty()) ut.addView(text(notes, 13, MUTED, REGULAR));
+        up.addView(ut, new LinearLayout.LayoutParams(0, WRAP, 1));
+        final TextView ub = text("Atualizar", 14, ON_ACCENT, MEDIUM);
+        ub.setPadding(dp(14), dp(8), dp(14), dp(8));
+        ub.setBackground(round(ACCENT, 0, 99));
+        ub.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            ub.setText("Baixando…");
+            Updater.downloadAndInstall(MainActivity.this, new Updater.Progress() { public void done(boolean ok, String msg) {
+                ub.setText("Atualizar");
+                if (!ok) Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
+            } });
+        } });
+        up.addView(ub);
+        root.addView(up, lp(MATCH, WRAP, dp(14)));
+    }
+
+    View weekSummary(String today) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(18), dp(16), dp(18), dp(16));
+        box.setBackground(round(SURFACE, dark ? 0 : LINE, 22));
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(text("Últimos 7 dias", 16, INK, MEDIUM), new LinearLayout.LayoutParams(0, WRAP, 1));
+        int tot = 0, done = 0;
+        float[] vals = new float[7];
+        String[] labs = new String[7];
+        for (int i = 0; i < 7; i++) {
+            String d = Model.addDays(today, i - 6);
+            labs[i] = Model.DOW1[Model.dow(d)];
+            if (d.compareTo(Model.START) < 0) { vals[i] = -1; continue; }
+            int[] p = Model.progress(this, d);
+            tot += p[1]; done += p[0];
+            vals[i] = p[1] == 0 ? 0 : (float) p[0] / p[1];
+        }
+        int pct = tot == 0 ? 0 : Math.round(100f * done / tot);
+        head.addView(text(pct + "%", 16, ACCENT, MEDIUM));
+        box.addView(head);
+        box.addView(new Bars(this, vals, labs), lp(MATCH, dp(96), dp(12)));
+        int best = Model.bestHabitStreak(this);
+        if (best >= 2) {
+            TextView b = text("Maior sequência atual: " + best + " dias", 13, MUTED, REGULAR);
+            b.setPadding(0, dp(10), 0, 0);
+            box.addView(b);
+        }
+        return box;
     }
 
     int groupOf(Model.Item it) {
@@ -285,7 +358,7 @@ public class MainActivity extends Activity {
         r.setPadding(dp(16), dp(12), dp(14), dp(12));
         r.setBackground(round(SURFACE, dark ? 0 : LINE, 18));
 
-        Check ck = new Check(this, it.done, it.overdue, "t".equals(it.kind));
+        Check ck = new Check(this, it.done, it.overdue, "t".equals(it.kind), it.color.isEmpty() ? ACCENT : Model.color(it.color, dark));
         r.addView(ck, new LinearLayout.LayoutParams(dp(26), dp(26)));
 
         LinearLayout txt = new LinearLayout(this);
@@ -302,9 +375,10 @@ public class MainActivity extends Activity {
         r.addView(txt, new LinearLayout.LayoutParams(0, WRAP, 1));
 
         if (it.streak >= 2) {
-            TextView st = text(it.streak + " dias", 12, ACCENT, MEDIUM);
+            int sc = it.color.isEmpty() ? ACCENT : Model.color(it.color, dark);
+            TextView st = text(it.streak + " dias", 12, sc, MEDIUM);
             st.setPadding(dp(10), dp(4), dp(10), dp(4));
-            st.setBackground(round(SOFT, 0, 99));
+            st.setBackground(round((sc & 0x00FFFFFF) | 0x22000000, 0, 99));
             r.addView(st);
         }
         r.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
@@ -415,6 +489,28 @@ public class MainActivity extends Activity {
         remind.setPadding(dp(4), dp(18), 0, dp(8));
         f.addView(remind);
 
+        f.addView(label("Cor"));
+        final String[] color = {isNew ? Model.COLOR_KEYS[(int) (Math.random() * Model.COLOR_KEYS.length)] : Model.colorKey(h)};
+        final LinearLayout colorRow = new LinearLayout(this);
+        final Runnable[] drawColors = new Runnable[1];
+        drawColors[0] = new Runnable() { public void run() {
+            colorRow.removeAllViews();
+            for (final String k : Model.COLOR_KEYS) {
+                View dot = new View(MainActivity.this);
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                g.setColor(Model.color(k, dark));
+                if (k.equals(color[0])) g.setStroke(dp(3), INK);
+                dot.setBackground(g);
+                dot.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { color[0] = k; drawColors[0].run(); } });
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(dp(32), dp(32));
+                l.setMargins(dp(3), 0, dp(5), dp(8));
+                colorRow.addView(dot, l);
+            }
+        } };
+        drawColors[0].run();
+        f.addView(colorRow);
+
         AlertDialog.Builder b = new AlertDialog.Builder(this)
                 .setTitle(isNew ? "Novo hábito" : "Editar hábito")
                 .setView(wrap(f))
@@ -434,7 +530,7 @@ public class MainActivity extends Activity {
                     if (!time[0].equals(h.optString("time", ""))) h.remove("times");
                     if (!note.getText().toString().trim().equals(h.optString("note", ""))) h.remove("notes");
                     h.put("title", t).put("note", note.getText().toString().trim()).put("days", d)
-                            .put("time", time[0]).put("remind", remind.isChecked());
+                            .put("time", time[0]).put("remind", remind.isChecked()).put("color", color[0]);
                 } catch (JSONException ignored) { }
                 Model.putHabit(MainActivity.this, h);
                 dlg.dismiss();
@@ -634,31 +730,85 @@ public class MainActivity extends Activity {
 
     class Check extends View {
         final boolean on, late, square;
+        final int col;
         final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        Check(Context c, boolean on, boolean late, boolean square) { super(c); this.on = on; this.late = late; this.square = square; }
+        Check(Context c, boolean on, boolean late, boolean square, int col) { super(c); this.on = on; this.late = late; this.square = square; this.col = col; }
         @Override protected void onDraw(Canvas cv) {
             float s = getWidth(), sw = dp(2);
             RectF r = new RectF(sw / 2, sw / 2, s - sw / 2, s - sw / 2);
             float rad = square ? dp(7) : s / 2;
             if (on) {
                 p.setStyle(Paint.Style.FILL);
-                p.setColor(ACCENT);
+                p.setColor(col);
                 cv.drawRoundRect(r, rad, rad, p);
                 p.setStyle(Paint.Style.STROKE);
                 p.setStrokeWidth(dp(2.4f));
                 p.setStrokeCap(Paint.Cap.ROUND);
                 p.setStrokeJoin(Paint.Join.ROUND);
-                p.setColor(ON_ACCENT);
+                p.setColor(dark ? 0xFF101417 : 0xFFFFFFFF);
                 android.graphics.Path path = new android.graphics.Path();
                 path.moveTo(s * 0.28f, s * 0.52f);
                 path.lineTo(s * 0.44f, s * 0.67f);
                 path.lineTo(s * 0.73f, s * 0.37f);
                 cv.drawPath(path, p);
             } else {
+                p.setStyle(Paint.Style.FILL);
+                p.setColor((col & 0x00FFFFFF) | 0x1A000000);
+                cv.drawRoundRect(r, rad, rad, p);
                 p.setStyle(Paint.Style.STROKE);
                 p.setStrokeWidth(sw);
-                p.setColor(late ? LATE : (dark ? 0xFF4A5660 : 0xFFC3CBC6));
+                p.setColor(late ? LATE : col);
                 cv.drawRoundRect(r, rad, rad, p);
+            }
+        }
+    }
+
+    class Ring extends View {
+        final float f;
+        final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        Ring(Context c, float f) { super(c); this.f = f; }
+        @Override protected void onDraw(Canvas cv) {
+            float w = getWidth(), sw = dp(8);
+            RectF r = new RectF(sw / 2, sw / 2, w - sw / 2, w - sw / 2);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(sw);
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setColor(LINE);
+            cv.drawOval(r, p);
+            if (f > 0) { p.setColor(ACCENT); cv.drawArc(r, -90, Math.max(4, 360 * f), false, p); }
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(INK);
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTypeface(MEDIUM);
+            p.setTextSize(dp(20));
+            String t = Math.round(f * 100) + "%";
+            cv.drawText(t, w / 2, w / 2 - (p.descent() + p.ascent()) / 2, p);
+        }
+    }
+
+    class Bars extends View {
+        final float[] v;
+        final String[] labs;
+        final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        Bars(Context c, float[] v, String[] labs) { super(c); this.v = v; this.labs = labs; }
+        @Override protected void onDraw(Canvas cv) {
+            float w = getWidth(), h = getHeight(), lh = dp(18), bw = dp(14);
+            float area = h - lh;
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTypeface(MEDIUM);
+            p.setTextSize(dp(11));
+            for (int i = 0; i < v.length; i++) {
+                float cx = w * (i + 0.5f) / v.length;
+                RectF bg = new RectF(cx - bw / 2, 0, cx + bw / 2, area);
+                p.setColor(LINE);
+                cv.drawRoundRect(bg, bw / 2, bw / 2, p);
+                if (v[i] > 0) {
+                    float top = area * (1 - v[i]);
+                    p.setColor(v[i] >= 1 ? ACCENT : (ACCENT & 0x00FFFFFF) | 0x99000000);
+                    cv.drawRoundRect(new RectF(cx - bw / 2, Math.min(top, area - bw), cx + bw / 2, area), bw / 2, bw / 2, p);
+                }
+                p.setColor(i == v.length - 1 ? INK : MUTED);
+                cv.drawText(labs[i], cx, h - dp(2), p);
             }
         }
     }
