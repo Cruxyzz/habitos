@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:paddingLeft="16dp"
+    android:paddingRight="16dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="10dp">
+
+    <LinearLayout
+        android:id="@+id/w_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="bottom">
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView android:id="@+id/w_date" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#8C9AA6" android:textSize="12sp" android:text="" />
+            <TextView android:id="@+id/w_title" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#EEF2F5" android:textSize="20sp" android:fontFamily="sans-serif-medium" android:text="Hoje" />
+        </LinearLayout>
+        <TextView android:id="@+id/w_count" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="#7FD1AE" android:textSize="15sp" android:fontFamily="sans-serif-medium" android:text="0/0"
+            android:paddingBottom="3dp" />
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/w_progress"
+        style="@android:style/Widget.Material.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="5dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="8dp"
+        android:max="100"
+        android:progress="0"
+        android:progressDrawable="@drawable/progress" />
+
+    <ListView
+        android:id="@+id/w_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@android:color/transparent"
+        android:dividerHeight="0dp"
+        android:scrollbars="none" />
+
+    <TextView
+        android:id="@+id/w_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="Nada pra hoje"
+        android:textColor="#8C9AA6"
+        android:textSize="14sp" />
+</LinearLayout>

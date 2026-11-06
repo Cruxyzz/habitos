@@ -1,0 +1,4 @@
+{
+  "android": { "version": 4, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.apk", "notes": "Atualização automática" },
+  "windows": { "version": 4, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.exe", "notes": "Atualização automática" }
+}
