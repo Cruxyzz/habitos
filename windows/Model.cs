@@ -442,8 +442,21 @@ namespace Habitos
 
         public static readonly string[] ColorKeys = { "verde", "azul", "roxo", "rosa", "laranja", "amarelo", "ciano" };
 
+        public static bool LightColors = false;
+
         public static System.Drawing.Color ColorOf(string key)
         {
+            if (LightColors)
+                switch (key)
+                {
+                    case "azul": return System.Drawing.Color.FromArgb(0x3F, 0x7C, 0xC4);
+                    case "roxo": return System.Drawing.Color.FromArgb(0x75, 0x56, 0xC4);
+                    case "rosa": return System.Drawing.Color.FromArgb(0xC4, 0x51, 0x7A);
+                    case "laranja": return System.Drawing.Color.FromArgb(0xD0, 0x7A, 0x2A);
+                    case "amarelo": return System.Drawing.Color.FromArgb(0xB0, 0x8A, 0x16);
+                    case "ciano": return System.Drawing.Color.FromArgb(0x23, 0x94, 0xA3);
+                    default: return System.Drawing.Color.FromArgb(0x3E, 0x8E, 0x7E);
+                }
             switch (key)
             {
                 case "azul": return System.Drawing.Color.FromArgb(0x6E, 0xA8, 0xE8);
@@ -526,6 +539,62 @@ namespace Habitos
 
         static readonly string[] MonthNames = { "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro" };
         public static string MonthName(DateTime d) { return MonthNames[d.Month - 1] + " " + d.Year; }
+
+        // ---------- estatísticas ----------
+
+        public static int RecordStreak(Dictionary<string, object> h)
+        {
+            var id = Str(h, "id"); int run = 0, best = 0;
+            for (var d = Start; d <= DateTime.Today; d = d.AddDays(1))
+            {
+                if (!AppliesOn(h, d)) continue;
+                if (Marked(d, id)) { run++; best = Math.Max(best, run); }
+                else if (d != DateTime.Today) run = 0;
+            }
+            return best;
+        }
+
+        public static int[] HabitRate(Dictionary<string, object> h, DateTime from, DateTime to)
+        {
+            var id = Str(h, "id"); int done = 0, tot = 0;
+            if (to > DateTime.Today) to = DateTime.Today;
+            if (from < Start) from = Start;
+            for (var d = from; d <= to; d = d.AddDays(1))
+            {
+                if (!AppliesOn(h, d)) continue;
+                bool m = Marked(d, id);
+                if (d == DateTime.Today && !m) continue;
+                tot++; if (m) done++;
+            }
+            return new[] { done, tot };
+        }
+
+        public static int[] RangeStats(DateTime from, DateTime to)
+        {
+            if (to > DateTime.Today) to = DateTime.Today;
+            if (from < Start) from = Start;
+            int done = 0, tot = 0, perfect = 0;
+            for (var d = from; d <= to; d = d.AddDays(1))
+            {
+                var p = Progress(d); done += p[0]; tot += p[1];
+                if (p[1] > 0 && p[0] == p[1]) perfect++;
+            }
+            return new[] { done, tot, perfect };
+        }
+
+        public static int[] BestWeekday()
+        {
+            var done = new int[7]; var tot = new int[7];
+            for (int i = 1; i <= 56; i++)
+            {
+                var d = DateTime.Today.AddDays(-i);
+                if (d < Start) break;
+                var p = Progress(d); done[(int)d.DayOfWeek] += p[0]; tot[(int)d.DayOfWeek] += p[1];
+            }
+            int best = -1; double bv = -1;
+            for (int i = 0; i < 7; i++) if (tot[i] > 0 && (double)done[i] / tot[i] > bv) { bv = (double)done[i] / tot[i]; best = i; }
+            return best < 0 ? null : new[] { best, (int)Math.Round(bv * 100) };
+        }
 
         public static string Greeting()
         {

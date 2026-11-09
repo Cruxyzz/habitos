@@ -50,16 +50,20 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle b) {
-        dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        String th = Model.prefs(this).getString("theme", "sistema");
+        boolean sysDark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        dark = th.equals("escuro") || (th.equals("sistema") && sysDark);
         setTheme(dark ? android.R.style.Theme_Material_NoActionBar : android.R.style.Theme_Material_Light_NoActionBar);
         super.onCreate(b);
         if (dark) {
             BG = 0xFF101417; SURFACE = 0xFF181E22; INK = 0xFFEEF2F5; MUTED = 0xFF8C9AA6;
-            LINE = 0xFF262E34; ACCENT = 0xFF7FD1AE; ON_ACCENT = 0xFF0E1A15; LATE = 0xFFE8A15C; SOFT = 0xFF1C2A25;
+            LINE = 0xFF262E34; ON_ACCENT = 0xFF0E1A15; LATE = 0xFFE8A15C;
         } else {
             BG = 0xFFF6F7F5; SURFACE = 0xFFFFFFFF; INK = 0xFF171C1F; MUTED = 0xFF6B757C;
-            LINE = 0xFFE4E8E5; ACCENT = 0xFF3E8E7E; ON_ACCENT = 0xFFFFFFFF; LATE = 0xFFD9822B; SOFT = 0xFFE8F2EF;
+            LINE = 0xFFE4E8E5; ON_ACCENT = 0xFFFFFFFF; LATE = 0xFFD9822B;
         }
+        ACCENT = Model.color(Model.prefs(this).getString("accent", "verde"), dark);
+        SOFT = blend(ACCENT, BG, dark ? 0.16f : 0.12f);
         MEDIUM = Typeface.create("sans-serif-medium", Typeface.NORMAL);
         REGULAR = Typeface.create("sans-serif", Typeface.NORMAL);
         DISPLAY = Typeface.create("sans-serif-light", Typeface.NORMAL);
@@ -123,6 +127,13 @@ public class MainActivity extends Activity {
         Sync.listener = null;
     }
 
+    static int blend(int a, int b, float f) {
+        int r = (int) (((a >> 16) & 255) * f + ((b >> 16) & 255) * (1 - f));
+        int g = (int) (((a >> 8) & 255) * f + ((b >> 8) & 255) * (1 - f));
+        int bl = (int) ((a & 255) * f + (b & 255) * (1 - f));
+        return 0xFF000000 | (r << 16) | (g << 8) | bl;
+    }
+
     // ---------------- helpers de UI ----------------
 
     int dp(float v) { return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()); }
@@ -154,7 +165,8 @@ public class MainActivity extends Activity {
 
     // ---------------- tela ----------------
 
-    String mode = "dia";      // dia, semana, mes
+    String mode = "dia";      // dia, semana, mes, resumo
+    Runnable lookApply;
     String monthAnchor;       // qualquer data do mês mostrado
 
     void render() {
@@ -165,7 +177,8 @@ public class MainActivity extends Activity {
         // Linha de cima: saudação + ajustes
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.addView(text(Model.greeting(), 15, MUTED, REGULAR), new LinearLayout.LayoutParams(0, WRAP, 1));
+        String nm = Model.prefs(this).getString("name", "").trim();
+        top.addView(text(Model.greeting() + (nm.isEmpty() ? "" : ", " + nm), 15, MUTED, REGULAR), new LinearLayout.LayoutParams(0, WRAP, 1));
         TextView gear = text("Ajustes", 13, MUTED, MEDIUM);
         gear.setPadding(dp(14), dp(7), dp(14), dp(7));
         gear.setBackground(round(0, LINE, 99));
@@ -174,7 +187,8 @@ public class MainActivity extends Activity {
         root.addView(top);
 
         String title;
-        if (mode.equals("mes")) title = Model.monthName(monthAnchor == null ? sel : monthAnchor);
+        if (mode.equals("resumo")) title = "Resumo";
+        else if (mode.equals("mes")) title = Model.monthName(monthAnchor == null ? sel : monthAnchor);
         else if (mode.equals("semana")) title = "Semana";
         else title = isToday ? "Hoje" : (sel.equals(Model.addDays(today, -1)) ? "Ontem" : Model.DOW[Model.dow(sel)]);
         TextView h1 = text(title, mode.equals("mes") ? 32 : 40, INK, DISPLAY);
@@ -185,7 +199,8 @@ public class MainActivity extends Activity {
         root.addView(segmented(), lp(MATCH, WRAP, dp(16)));
         updateBanner();
 
-        if (mode.equals("semana")) renderWeek(today);
+        if (mode.equals("resumo")) renderStats(today);
+        else if (mode.equals("semana")) renderWeek(today);
         else if (mode.equals("mes")) renderMonth(today);
         else renderDay(today);
     }
@@ -194,8 +209,8 @@ public class MainActivity extends Activity {
         LinearLayout seg = new LinearLayout(this);
         seg.setPadding(dp(4), dp(4), dp(4), dp(4));
         seg.setBackground(round(dark ? SURFACE : 0xFFECEFEC, 0, 99));
-        String[] keys = {"dia", "semana", "mes"}, labels = {"Dia", "Semana", "Mês"};
-        for (int i = 0; i < 3; i++) {
+        String[] keys = {"dia", "semana", "mes", "resumo"}, labels = {"Dia", "Semana", "Mês", "Resumo"};
+        for (int i = 0; i < 4; i++) {
             final String k = keys[i];
             boolean on = mode.equals(k);
             TextView t = text(labels[i], 14, on ? INK : MUTED, MEDIUM);
@@ -336,6 +351,116 @@ public class MainActivity extends Activity {
         r.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
             editEvent(Model.taskById(MainActivity.this, it.id)); } });
         return r;
+    }
+
+    // ---------------- Resumo ----------------
+
+    void renderStats(final String today) {
+        Calendar c0 = Model.parse(today);
+        c0.set(Calendar.DAY_OF_MONTH, 1);
+        String first = Model.fmt(c0);
+        int[] ms = Model.rangeStats(this, first, today);
+        int pct = ms[1] == 0 ? 0 : Math.round(100f * ms[0] / ms[1]);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(round(SURFACE, dark ? 0 : LINE, 22));
+        TextView lab = text("ESTE MÊS", 12, MUTED, MEDIUM);
+        lab.setLetterSpacing(0.08f);
+        card.addView(lab);
+        LinearLayout big = new LinearLayout(this);
+        big.setGravity(Gravity.BOTTOM);
+        TextView pv = text(pct + "%", 44, INK, DISPLAY);
+        big.addView(pv);
+        TextView pd = text("  " + ms[0] + " de " + ms[1] + " concluídos", 14, MUTED, REGULAR);
+        pd.setPadding(0, 0, 0, dp(10));
+        big.addView(pd);
+        card.addView(big);
+        card.addView(new Bar(this, ms[1] == 0 ? 0 : (float) ms[0] / ms[1]), lp(MATCH, dp(6), dp(6)));
+        root.addView(card, lp(MATCH, WRAP, dp(16)));
+
+        LinearLayout tiles = new LinearLayout(this);
+        int[] bw = Model.bestWeekday(this);
+        tiles.addView(tile(String.valueOf(ms[2]), ms[2] == 1 ? "dia perfeito no mês" : "dias perfeitos no mês"), new LinearLayout.LayoutParams(0, WRAP, 1));
+        View gap = new View(this);
+        tiles.addView(gap, new LinearLayout.LayoutParams(dp(10), 1));
+        tiles.addView(tile(String.valueOf(Model.perfectStreak(this)), "dias seguidos com tudo feito"), new LinearLayout.LayoutParams(0, WRAP, 1));
+        root.addView(tiles, lp(MATCH, WRAP, dp(10)));
+        if (bw != null) {
+            LinearLayout t2 = new LinearLayout(this);
+            t2.addView(tile(Model.DOW[bw[0]], "seu melhor dia · " + bw[1] + "%"), new LinearLayout.LayoutParams(0, WRAP, 1));
+            root.addView(t2, lp(MATCH, WRAP, dp(10)));
+        }
+
+        TextView gh = text("HÁBITOS · ÚLTIMOS 30 DIAS", 12, MUTED, MEDIUM);
+        gh.setLetterSpacing(0.08f);
+        root.addView(gh, lp(WRAP, WRAP, dp(26)));
+        String from = Model.addDays(today, -29);
+        for (JSONObject h : Model.habits(this)) {
+            int col = Model.color(Model.colorKey(h), dark);
+            int[] r = Model.habitRate(this, h, from, today);
+            int cur = Model.streak(this, h), rec = Model.recordStreak(this, h);
+            LinearLayout hc = new LinearLayout(this);
+            hc.setOrientation(LinearLayout.VERTICAL);
+            hc.setPadding(dp(16), dp(14), dp(16), dp(14));
+            hc.setBackground(round(SURFACE, dark ? 0 : LINE, 18));
+            LinearLayout top = new LinearLayout(this);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            View dot = new View(this);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(col);
+            dot.setBackground(g);
+            top.addView(dot, new LinearLayout.LayoutParams(dp(10), dp(10)));
+            TextView tt = text(h.optString("title"), 15, INK, MEDIUM);
+            tt.setPadding(dp(10), 0, 0, 0);
+            tt.setSingleLine(true);
+            tt.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            top.addView(tt, new LinearLayout.LayoutParams(0, WRAP, 1));
+            top.addView(text(r[1] == 0 ? "—" : Math.round(100f * r[0] / r[1]) + "%", 15, col, MEDIUM));
+            hc.addView(top);
+            boolean[] app = new boolean[30], done = new boolean[30];
+            for (int i = 0; i < 30; i++) {
+                String d = Model.addDays(from, i);
+                app[i] = Model.appliesOn(h, d);
+                done[i] = app[i] && Model.isMarked(this, d, h.optString("id"));
+            }
+            hc.addView(new Heat(this, app, done, col), lp(MATCH, dp(16), dp(10)));
+            TextView sub = text("Sequência atual " + cur + " · recorde " + rec, 12, MUTED, REGULAR);
+            sub.setPadding(0, dp(8), 0, 0);
+            hc.addView(sub);
+            final String hid = h.optString("id");
+            hc.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { editHabit(Model.habitById(MainActivity.this, hid)); } });
+            root.addView(hc, lp(MATCH, WRAP, dp(8)));
+        }
+    }
+
+    View tile(String big, String small) {
+        LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        t.setPadding(dp(16), dp(14), dp(16), dp(14));
+        t.setBackground(round(SURFACE, dark ? 0 : LINE, 18));
+        t.addView(text(big, 26, ACCENT, DISPLAY));
+        t.addView(text(small, 13, MUTED, REGULAR));
+        return t;
+    }
+
+    class Heat extends View {
+        final boolean[] app, done; final int col;
+        final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        Heat(Context c, boolean[] app, boolean[] done, int col) { super(c); this.app = app; this.done = done; this.col = col; }
+        @Override protected void onDraw(Canvas cv) {
+            float w = getWidth(), h = getHeight(), gap = dp(2);
+            float cw = (w - gap * (app.length - 1)) / app.length;
+            for (int i = 0; i < app.length; i++) {
+                float x = i * (cw + gap);
+                RectF r = new RectF(x, 0, x + cw, h);
+                if (!app[i]) { p.setColor((LINE & 0x00FFFFFF) | 0x55000000); }
+                else p.setColor(done[i] ? col : LINE);
+                cv.drawRoundRect(r, dp(3), dp(3), p);
+            }
+        }
     }
 
     // ---------------- Semana ----------------
@@ -1138,6 +1263,59 @@ public class MainActivity extends Activity {
         status.setPadding(dp(4), dp(6), 0, 0);
         f.addView(status);
 
+        f.addView(label("Seu nome (aparece no cumprimento)"));
+        final EditText nameF = field("Ex.: Yago", Model.prefs(this).getString("name", ""));
+        f.addView(nameF);
+
+        f.addView(label("Tema"));
+        final String[] theme = {Model.prefs(this).getString("theme", "sistema")};
+        final LinearLayout themeRow = new LinearLayout(this);
+        final Runnable[] drawTheme = new Runnable[1];
+        drawTheme[0] = new Runnable() { public void run() {
+            themeRow.removeAllViews();
+            String[] k = {"sistema", "claro", "escuro"}, l = {"Automático", "Claro", "Escuro"};
+            for (int i = 0; i < 3; i++) {
+                final String kk = k[i];
+                TextView p = pill(l[i], theme[0].equals(kk));
+                p.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { theme[0] = kk; drawTheme[0].run(); } });
+                LinearLayout.LayoutParams lpp = new LinearLayout.LayoutParams(0, dp(38), 1);
+                lpp.setMargins(dp(2), 0, dp(2), 0);
+                themeRow.addView(p, lpp);
+            }
+        } };
+        drawTheme[0].run();
+        f.addView(themeRow);
+
+        f.addView(label("Cor de destaque"));
+        final String[] accent = {Model.prefs(this).getString("accent", "verde")};
+        final LinearLayout accRow = new LinearLayout(this);
+        final Runnable[] drawAcc = new Runnable[1];
+        drawAcc[0] = new Runnable() { public void run() {
+            accRow.removeAllViews();
+            for (final String k : Model.COLOR_KEYS) {
+                View dot = new View(MainActivity.this);
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                g.setColor(Model.color(k, dark));
+                if (k.equals(accent[0])) g.setStroke(dp(3), INK);
+                dot.setBackground(g);
+                dot.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { accent[0] = k; drawAcc[0].run(); } });
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(dp(32), dp(32));
+                l.setMargins(dp(3), 0, dp(5), 0);
+                accRow.addView(dot, l);
+            }
+        } };
+        drawAcc[0].run();
+        f.addView(accRow);
+        final Runnable applyLook = new Runnable() { public void run() {
+            boolean changedLook = !theme[0].equals(Model.prefs(MainActivity.this).getString("theme", "sistema"))
+                    || !accent[0].equals(Model.prefs(MainActivity.this).getString("accent", "verde"));
+            Model.prefs(MainActivity.this).edit().putString("name", nameF.getText().toString().trim())
+                    .putString("theme", theme[0]).putString("accent", accent[0]).apply();
+            if (changedLook) recreate(); else render();
+        } };
+        lookApply = applyLook;
+
         f.addView(label("Notificações"));
         boolean on = Reminders.notificationsEnabled(this);
         TextView nb = pill(on ? "Ativadas · abrir ajustes" : "Desativadas · toque pra ativar", false);
@@ -1170,10 +1348,11 @@ public class MainActivity extends Activity {
                 .setTitle("Ajustes")
                 .setView(wrap(f))
                 .setNegativeButton("Fechar", null)
-                .setPositiveButton("Salvar e sincronizar", null)
+                .setPositiveButton("Salvar", null)
                 .create();
         dlg.setOnShowListener(new DialogInterface.OnShowListener() { public void onShow(DialogInterface di) {
             dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                if (lookApply != null) { Runnable r = lookApply; lookApply = null; dlg.dismiss(); Sync.setUrl(MainActivity.this, url.getText().toString()); Sync.now(MainActivity.this, null); r.run(); return; }
                 Sync.setUrl(MainActivity.this, url.getText().toString());
                 status.setText("Sincronizando…");
                 Sync.now(MainActivity.this, new Sync.Done() { public void run(boolean ok, String msg) {

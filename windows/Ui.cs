@@ -10,22 +10,40 @@ using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("Hábitos")]
 [assembly: System.Reflection.AssemblyProduct("Hábitos")]
-[assembly: System.Reflection.AssemblyVersion("3.0.0.0")]
+[assembly: System.Reflection.AssemblyVersion("3.1.0.0")]
 
 namespace Habitos
 {
     static class Theme
     {
-        public static readonly Color Bg = Color.FromArgb(0x13, 0x18, 0x1C);
-        public static readonly Color Surface = Color.FromArgb(0x1B, 0x22, 0x27);
-        public static readonly Color Hover = Color.FromArgb(0x21, 0x2A, 0x30);
-        public static readonly Color Ink = Color.FromArgb(0xEE, 0xF2, 0xF5);
-        public static readonly Color Muted = Color.FromArgb(0x8C, 0x9A, 0xA6);
-        public static readonly Color Faint = Color.FromArgb(0x4A, 0x56, 0x60);
-        public static readonly Color Line = Color.FromArgb(0x29, 0x32, 0x38);
-        public static readonly Color Accent = Color.FromArgb(0x7F, 0xD1, 0xAE);
-        public static readonly Color OnAccent = Color.FromArgb(0x0E, 0x1A, 0x15);
-        public static readonly Color Late = Color.FromArgb(0xE8, 0xA1, 0x5C);
+        public static Color Bg, Surface, Hover, Ink, Muted, Faint, Line, Accent, OnAccent, Late, Tab;
+        public static bool IsLight;
+
+        public static void Apply()
+        {
+            var th = Settings.Get("theme", "escuro");
+            IsLight = th == "claro" || (th == "sistema" && SystemLight());
+            Model.LightColors = IsLight;
+            if (IsLight)
+            {
+                Bg = Color.FromArgb(0xF6, 0xF7, 0xF5); Surface = Color.FromArgb(0xFF, 0xFF, 0xFF); Hover = Color.FromArgb(0xEC, 0xEF, 0xEC);
+                Ink = Color.FromArgb(0x17, 0x1C, 0x1F); Muted = Color.FromArgb(0x6B, 0x75, 0x7C); Faint = Color.FromArgb(0xB4, 0xBC, 0xB8);
+                Line = Color.FromArgb(0xE2, 0xE6, 0xE3); OnAccent = Color.White; Late = Color.FromArgb(0xD9, 0x82, 0x2B); Tab = Color.White;
+            }
+            else
+            {
+                Bg = Color.FromArgb(0x13, 0x18, 0x1C); Surface = Color.FromArgb(0x1B, 0x22, 0x27); Hover = Color.FromArgb(0x21, 0x2A, 0x30);
+                Ink = Color.FromArgb(0xEE, 0xF2, 0xF5); Muted = Color.FromArgb(0x8C, 0x9A, 0xA6); Faint = Color.FromArgb(0x4A, 0x56, 0x60);
+                Line = Color.FromArgb(0x29, 0x32, 0x38); OnAccent = Color.FromArgb(0x0E, 0x1A, 0x15); Late = Color.FromArgb(0xE8, 0xA1, 0x5C); Tab = Color.FromArgb(0x2C, 0x36, 0x3D);
+            }
+            Accent = Model.ColorOf(Settings.Get("accent", "verde"));
+        }
+
+        static bool SystemLight()
+        {
+            try { using (var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) return k != null && Convert.ToInt32(k.GetValue("AppsUseLightTheme", 0)) == 1; }
+            catch { return false; }
+        }
         public static float S = 1f; // escala de DPI
         public static int P(float v) { return (int)Math.Round(v * S); }
         public static Font F(float pt, bool semibold = false) { return new Font(semibold ? "Segoe UI Semibold" : "Segoe UI", pt); }
@@ -120,6 +138,7 @@ namespace Habitos
             Height = Theme.P(200);
             Pinned = Settings.Get("mode", "pin") == "pin";
             TopMost = !Pinned;
+            ApplyLook();
             weekStart = sel.AddDays(-(int)sel.DayOfWeek);
             monthStart = new DateTime(sel.Year, sel.Month, 1);
 
@@ -141,6 +160,14 @@ namespace Habitos
         protected override CreateParams CreateParams
         {
             get { var cp = base.CreateParams; cp.ExStyle |= 0x80; cp.ClassStyle |= 0x20000; return cp; }
+        }
+
+        public void ApplyLook()
+        {
+            BackColor = Theme.Bg;
+            int op; if (!int.TryParse(Settings.Get("opacity", "100"), out op)) op = 100;
+            Opacity = Math.Max(50, Math.Min(100, op)) / 100.0;
+            Invalidate();
         }
 
         protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); Native.RoundCorners(Handle); }
@@ -179,7 +206,8 @@ namespace Habitos
             items = Model.ItemsFor(sel).OrderBy(Group).ThenBy(i => i.Done ? 1 : 0).ThenBy(i => i.Minutes < 0 ? 100000 : i.Minutes).ToList();
             next = sel == DateTime.Today ? Model.NextTask() : null;
             int h;
-            if (mode == "semana") h = Theme.P(BodyTop + 34 + 7 * 50 + 12);
+            if (mode == "resumo") h = Theme.P(BodyTop + 160 + Model.Habits().Count * 66 + 16);
+            else if (mode == "semana") h = Theme.P(BodyTop + 34 + 7 * 50 + 12);
             else if (mode == "mes")
             {
                 int offset = (int)monthStart.DayOfWeek, days = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
@@ -220,10 +248,10 @@ namespace Habitos
             var today = DateTime.Today;
 
             // Cabeçalho
-            string title = mode == "mes" ? Model.MonthName(monthStart) : mode == "semana" ? "Semana" :
+            string title = mode == "resumo" ? "Resumo" : mode == "mes" ? Model.MonthName(monthStart) : mode == "semana" ? "Semana" :
                 sel == today ? "Hoje" : (sel == today.AddDays(-1) ? "Ontem" : Model.DowNames[(int)sel.DayOfWeek]);
             using (var f = Theme.F(9f)) using (var b = new SolidBrush(Theme.Muted))
-                g.DrawString(Model.Greeting(), f, b, new RectangleF(pad - Theme.P(2), Theme.P(14), w - Theme.P(150), Theme.P(18)), FmtL);
+                g.DrawString(Model.Greeting() + (Settings.Get("name", "") == "" ? "" : ", " + Settings.Get("name", "")), f, b, new RectangleF(pad - Theme.P(2), Theme.P(14), w - Theme.P(150), Theme.P(18)), FmtL);
             float tw;
             using (var f = Theme.Light(mode == "mes" ? 18f : 22f)) using (var b = new SolidBrush(Theme.Ink))
             {
@@ -250,18 +278,19 @@ namespace Habitos
             // Abas
             var tabs = new RectangleF(Theme.P(12), Theme.P(TabsTop), w - Theme.P(24), Theme.P(32));
             using (var path = Theme.Round(tabs, tabs.Height / 2)) using (var b = new SolidBrush(Theme.Surface)) g.FillPath(b, path);
-            string[] tk = { "dia", "semana", "mes" }, tl = { "Dia", "Semana", "Mês" };
-            for (int i = 0; i < 3; i++)
+            string[] tk = { "dia", "semana", "mes", "resumo" }, tl = { "Dia", "Semana", "Mês", "Resumo" };
+            for (int i = 0; i < 4; i++)
             {
-                var r = new RectangleF(tabs.X + Theme.P(3) + i * (tabs.Width - Theme.P(6)) / 3, tabs.Y + Theme.P(3), (tabs.Width - Theme.P(6)) / 3, tabs.Height - Theme.P(6));
+                var r = new RectangleF(tabs.X + Theme.P(3) + i * (tabs.Width - Theme.P(6)) / 4, tabs.Y + Theme.P(3), (tabs.Width - Theme.P(6)) / 4, tabs.Height - Theme.P(6));
                 bool on = mode == tk[i];
-                if (on) using (var path = Theme.Round(r, r.Height / 2)) using (var b = new SolidBrush(Color.FromArgb(0x2C, 0x36, 0x3D))) g.FillPath(b, path);
+                if (on) using (var path = Theme.Round(r, r.Height / 2)) using (var b = new SolidBrush(Theme.Tab)) g.FillPath(b, path);
                 else HoverFill(g, r, "tab_" + tk[i], r.Height / 2);
                 using (var f = Theme.F(9f, true)) using (var b = new SolidBrush(on ? Theme.Ink : Theme.Muted)) g.DrawString(tl[i], f, b, r, FmtC);
                 Hit(r, "tab_" + tk[i]);
             }
 
-            if (mode == "semana") PaintWeek(g, w, pad, today);
+            if (mode == "resumo") PaintStats(g, w, pad, today);
+            else if (mode == "semana") PaintWeek(g, w, pad, today);
             else if (mode == "mes") PaintMonth(g, w, pad, today);
             else PaintDay(g, w, pad, today);
         }
@@ -410,6 +439,68 @@ namespace Habitos
                 var d = today.AddDays(i - 6);
                 using (var f = Theme.F(7.5f, i == 6)) using (var b = new SolidBrush(i == 6 ? Theme.Ink : Theme.Muted))
                     g.DrawString(Model.Dow1[(int)d.DayOfWeek], f, b, new RectangleF(cx - Theme.P(10), barTop + barH + Theme.P(2), Theme.P(20), Theme.P(16)), new StringFormat { Alignment = StringAlignment.Center });
+            }
+        }
+
+        void PaintStats(Graphics g, float w, float pad, DateTime today)
+        {
+            var first = new DateTime(today.Year, today.Month, 1);
+            var ms = Model.RangeStats(first, today);
+            int pct = ms[1] == 0 ? 0 : (int)Math.Round(100.0 * ms[0] / ms[1]);
+            float y = Theme.P(BodyTop);
+            var card = new RectangleF(Theme.P(10), y, w - Theme.P(20), Theme.P(86));
+            using (var path = Theme.Round(card, Theme.P(16))) using (var b = new SolidBrush(Theme.Surface)) g.FillPath(b, path);
+            using (var f = Theme.F(7.5f, true)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString("ESTE MÊS", f, b, card.X + Theme.P(14), card.Y + Theme.P(10));
+            float pw;
+            using (var f = Theme.Light(24f)) using (var b = new SolidBrush(Theme.Ink)) { pw = g.MeasureString(pct + "%", f).Width; g.DrawString(pct + "%", f, b, card.X + Theme.P(8), card.Y + Theme.P(24)); }
+            using (var f = Theme.F(9f)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString(ms[0] + " de " + ms[1] + " concluídos", f, b, card.X + Theme.P(10) + pw, card.Y + Theme.P(40));
+            float bh = Theme.P(5), by = card.Bottom - Theme.P(16), bw = card.Width - Theme.P(28);
+            using (var path = Theme.Round(new RectangleF(card.X + Theme.P(14), by, bw, bh), bh / 2)) using (var b = new SolidBrush(Theme.Line)) g.FillPath(b, path);
+            if (ms[0] > 0) using (var path = Theme.Round(new RectangleF(card.X + Theme.P(14), by, Math.Max(bh, bw * ms[0] / ms[1]), bh), bh / 2)) using (var b = new SolidBrush(Theme.Accent)) g.FillPath(b, path);
+
+            y = card.Bottom + Theme.P(8);
+            var bwk = Model.BestWeekday();
+            string[] bigs = { ms[2].ToString(), Model.PerfectStreak().ToString(), bwk == null ? "—" : Model.DowNames[bwk[0]].Substring(0, 3) };
+            string[] smalls = { "dias perfeitos", "seguidos agora", bwk == null ? "melhor dia" : "melhor dia · " + bwk[1] + "%" };
+            float tw = (w - Theme.P(20) - Theme.P(12)) / 3;
+            for (int i = 0; i < 3; i++)
+            {
+                var t = new RectangleF(Theme.P(10) + i * (tw + Theme.P(6)), y, tw, Theme.P(56));
+                using (var path = Theme.Round(t, Theme.P(12))) using (var b = new SolidBrush(Theme.Surface)) g.FillPath(b, path);
+                using (var f = Theme.Light(14f)) using (var b = new SolidBrush(Theme.Accent)) g.DrawString(bigs[i], f, b, t.X + Theme.P(6), t.Y + Theme.P(4));
+                using (var f = Theme.F(7.5f)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString(smalls[i], f, b, new RectangleF(t.X + Theme.P(10), t.Y + Theme.P(34), t.Width - Theme.P(12), Theme.P(16)), FmtL);
+            }
+            y += Theme.P(66);
+            using (var f = Theme.F(7.5f, true)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString("HÁBITOS · ÚLTIMOS 30 DIAS", f, b, pad - Theme.P(2), y);
+            y += Theme.P(20);
+            var from = today.AddDays(-29);
+            foreach (var h in Model.Habits())
+            {
+                if (y + Theme.P(62) > Height) break;
+                var col = Model.ColorOf(Model.ColorKey(h));
+                var r = new RectangleF(Theme.P(10), y, w - Theme.P(20), Theme.P(60));
+                string key = "habit:" + Model.Str(h, "id");
+                using (var path = Theme.Round(r, Theme.P(12))) using (var b = new SolidBrush(key == hoverKey ? Theme.Hover : Theme.Surface)) g.FillPath(b, path);
+                using (var b = new SolidBrush(col)) g.FillEllipse(b, r.X + Theme.P(12), r.Y + Theme.P(12), Theme.P(8), Theme.P(8));
+                var rate = Model.HabitRate(h, from, today);
+                string rt = rate[1] == 0 ? "—" : (int)Math.Round(100.0 * rate[0] / rate[1]) + "%";
+                float rw;
+                using (var f = Theme.F(9f, true)) using (var b = new SolidBrush(col)) { rw = g.MeasureString(rt, f).Width; g.DrawString(rt, f, b, r.Right - rw - Theme.P(10), r.Y + Theme.P(5)); }
+                using (var f = Theme.F(9.5f, true)) using (var b = new SolidBrush(Theme.Ink))
+                    g.DrawString(Model.Str(h, "title"), f, b, new RectangleF(r.X + Theme.P(26), r.Y + Theme.P(4), r.Width - rw - Theme.P(44), Theme.P(20)), FmtL);
+                float cw = (r.Width - Theme.P(24) - 29 * Theme.P(2)) / 30;
+                for (int i = 0; i < 30; i++)
+                {
+                    var d = from.AddDays(i);
+                    bool app = Model.AppliesOn(h, d), done = app && Model.Marked(d, Model.Str(h, "id"));
+                    var cell = new RectangleF(r.X + Theme.P(12) + i * (cw + Theme.P(2)), r.Y + Theme.P(27), cw, Theme.P(11));
+                    using (var path = Theme.Round(cell, Theme.P(2)))
+                    using (var b = new SolidBrush(!app ? Alpha(Theme.Line, 90) : done ? col : Theme.Line)) g.FillPath(b, path);
+                }
+                using (var f = Theme.F(7.5f)) using (var b = new SolidBrush(Theme.Muted))
+                    g.DrawString("Sequência atual " + Model.Streak(h) + " · recorde " + Model.RecordStreak(h), f, b, r.X + Theme.P(10), r.Y + Theme.P(41));
+                Hit(r, key);
+                y += Theme.P(66);
             }
         }
 
@@ -605,6 +696,7 @@ namespace Habitos
                 else if (k == "mprev") { monthStart = monthStart.AddMonths(-1); Reload(); }
                 else if (k == "mnext") { monthStart = monthStart.AddMonths(1); Reload(); }
                 else if (k.StartsWith("day:")) GoDay(Model.ParseDate(k.Substring(4)));
+                else if (k.StartsWith("habit:")) Editors.Edit("h", k.Substring(6));
                 else if (k.StartsWith("item:"))
                 {
                     var parts = k.Split(':');
@@ -645,7 +737,7 @@ namespace Habitos
             ShowIcon = false;
             TopMost = true;
         }
-        protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); Native.DarkTitle(Handle); }
+        protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); if (!Theme.IsLight) Native.DarkTitle(Handle); }
 
         public Label Lbl(string s, int x, int y, bool muted = true)
         {
@@ -663,7 +755,7 @@ namespace Habitos
             b.BackColor = primary ? Theme.Accent : Theme.Surface;
             b.ForeColor = primary ? Theme.OnAccent : Theme.Ink;
             b.FlatAppearance.BorderColor = primary ? Theme.Accent : Theme.Line;
-            b.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(0x95, 0xDC, 0xBD) : Theme.Hover;
+            b.FlatAppearance.MouseOverBackColor = primary ? ControlPaint.Light(Theme.Accent) : Theme.Hover;
             Controls.Add(b); return b;
         }
         public CheckBox Check(string s, bool on, int x, int y)
@@ -1009,26 +1101,69 @@ namespace Habitos
 
         public static void SettingsForm(DesktopWidget w)
         {
-            var f = new DarkForm("Ajustes", 440, 330);
-            f.Lbl("SINCRONIZAÇÃO COM O CELULAR", 22, 18);
-            var url = f.Box(Settings.Get("syncurl", ""), 22, 42, 396);
-            var status = new Label { Text = Sync.Status == "" ? (Settings.Get("syncurl", "") == "" ? "Cole o link do script do Google e clique em Salvar." : "Ainda não sincronizado nesta sessão.") : Sync.Status, AutoSize = false, Size = new Size(Theme.P(396), Theme.P(36)), ForeColor = Theme.Muted, Location = new Point(Theme.P(22), Theme.P(76)) };
+            var f = new DarkForm("Ajustes", 440, 560);
+            f.Lbl("SEU NOME (APARECE NO CUMPRIMENTO)", 22, 18);
+            var name = f.Box(Settings.Get("name", ""), 22, 40, 396);
+
+            f.Lbl("TEMA", 22, 84);
+            string th = Settings.Get("theme", "escuro");
+            var t1 = f.Pill("Automático", th == "sistema", 22, 106, 128);
+            var t2 = f.Pill("Claro", th == "claro", 156, 106, 128);
+            var t3 = f.Pill("Escuro", th == "escuro", 290, 106, 128);
+            var tp = new[] { t1, t2, t3 };
+            foreach (var p in tp) { var me = p; me.Click += (s, e) => { foreach (var q in tp) q.Checked = q == me; }; }
+
+            f.Lbl("COR DE DESTAQUE", 22, 152);
+            string accent = Settings.Get("accent", "verde");
+            var sws = new List<Panel>();
+            for (int i = 0; i < Model.ColorKeys.Length; i++)
+            {
+                var sw = new Panel { Location = new Point(Theme.P(22 + i * 38), Theme.P(172)), Size = new Size(Theme.P(30), Theme.P(30)), Cursor = Cursors.Hand, Tag = Model.ColorKeys[i] };
+                sw.Paint += (s2, e2) =>
+                {
+                    Theme.Smooth(e2.Graphics); e2.Graphics.Clear(Theme.Bg);
+                    using (var b = new SolidBrush(Model.ColorOf((string)((Panel)s2).Tag))) e2.Graphics.FillEllipse(b, Theme.P(3), Theme.P(3), Theme.P(24), Theme.P(24));
+                    if ((string)((Panel)s2).Tag == accent) using (var pen = new Pen(Theme.Ink, Theme.P(2))) e2.Graphics.DrawEllipse(pen, Theme.P(1), Theme.P(1), Theme.P(28), Theme.P(28));
+                };
+                sw.Click += (s2, e2) => { accent = (string)((Panel)s2).Tag; foreach (var x in sws) x.Invalidate(); };
+                sws.Add(sw); f.Controls.Add(sw);
+            }
+
+            f.Lbl("TRANSPARÊNCIA DO WIDGET", 22, 218);
+            int op; if (!int.TryParse(Settings.Get("opacity", "100"), out op)) op = 100;
+            var track = new TrackBar { Minimum = 50, Maximum = 100, TickFrequency = 10, Value = Math.Max(50, Math.Min(100, op)), Location = new Point(Theme.P(16), Theme.P(238)), Width = Theme.P(400), BackColor = Theme.Bg };
+            track.Scroll += (s, e) => { w.Opacity = track.Value / 100.0; };
+            f.Controls.Add(track);
+
+            f.Lbl("SINCRONIZAÇÃO COM O CELULAR", 22, 296);
+            var url = f.Box(Settings.Get("syncurl", ""), 22, 318, 396);
+            var status = new Label { Text = Sync.Status == "" ? (Settings.Get("syncurl", "") == "" ? "Cole o link do script do Google e clique em Salvar." : "Ainda não sincronizado nesta sessão.") : Sync.Status, AutoSize = false, Size = new Size(Theme.P(396), Theme.P(34)), ForeColor = Theme.Muted, Location = new Point(Theme.P(22), Theme.P(350)) };
             f.Controls.Add(status);
-            f.Lbl("WIDGET", 22, 124);
-            var pin = f.Check("Fixo na área de trabalho (fica atrás das janelas)", w.Pinned, 22, 148);
-            var startup = f.Check("Iniciar com o Windows", Program.IsStartup(), 22, 178);
-            var save = f.Btn("Salvar e sincronizar", 238, 270, 180, true);
-            f.Btn("Fechar", 110, 270, 120).Click += (s, e) => f.Close();
+            f.Lbl("WIDGET", 22, 392);
+            var pin = f.Check("Fixo na área de trabalho (fica atrás das janelas)", w.Pinned, 22, 414);
+            var startup = f.Check("Iniciar com o Windows", Program.IsStartup(), 22, 444);
+            var save = f.Btn("Salvar", 298, 502, 120, true);
+            f.Btn("Fechar", 170, 502, 120).Click += (s, e) => { w.ApplyLook(); f.Close(); };
+            f.Controls.Add(new Label { Text = "Versão " + Updater.Version, AutoSize = true, ForeColor = Theme.Muted, Location = new Point(Theme.P(22), Theme.P(512)) });
             Action<bool, string> onSync = (ok, msg) => { if (!f.IsDisposed && f.IsHandleCreated) f.BeginInvoke((Action)(() => status.Text = msg)); };
             Sync.Finished += onSync;
             f.FormClosed += (s, e) => Sync.Finished -= onSync;
             save.Click += (s, e) =>
             {
+                string newTheme = t2.Checked ? "claro" : t3.Checked ? "escuro" : "sistema";
+                bool look = newTheme != Settings.Get("theme", "escuro") || accent != Settings.Get("accent", "verde");
+                Settings.Set("name", name.Text.Trim());
+                Settings.Set("theme", newTheme);
+                Settings.Set("accent", accent);
+                Settings.Set("opacity", track.Value.ToString());
                 Settings.Set("syncurl", url.Text.Trim());
                 w.SetPinned(pin.Checked);
                 if (startup.Checked != Program.IsStartup()) Program.ToggleStartup();
-                status.Text = url.Text.Trim() == "" ? "Sincronização desligada." : "Sincronizando…";
+                Theme.Apply();
+                w.ApplyLook();
+                w.Reload();
                 Sync.Run();
+                if (look) { f.Close(); SettingsForm(w); } else status.Text = url.Text.Trim() == "" ? "Salvo." : "Salvo. Sincronizando…";
             };
             f.Show();
             f.Activate();
@@ -1060,6 +1195,7 @@ namespace Habitos
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 using (var g = Graphics.FromHwnd(IntPtr.Zero)) Theme.S = g.DpiX / 96f;
+                Theme.Apply();
 
                 widget = new DesktopWidget();
                 var icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);

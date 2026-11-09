@@ -617,6 +617,68 @@ public final class Model {
         return Character.toUpperCase(m.charAt(0)) + m.substring(1) + " " + c.get(Calendar.YEAR);
     }
 
+    // ---------------- estatísticas ----------------
+
+    /** Maior sequência já feita do hábito. */
+    public static int recordStreak(Context c, JSONObject h) {
+        String id = h.optString("id");
+        String d = START, today = today();
+        int run = 0, best = 0, guard = 0;
+        while (d.compareTo(today) <= 0 && guard++ < 2000) {
+            if (appliesOn(h, d)) {
+                if (isMarked(c, d, id)) { run++; best = Math.max(best, run); }
+                else if (!d.equals(today)) run = 0;
+            }
+            d = addDays(d, 1);
+        }
+        return best;
+    }
+
+    /** {feitos, aplicáveis} do hábito entre from e to (inclusive, limitado a hoje). */
+    public static int[] habitRate(Context c, JSONObject h, String from, String to) {
+        String id = h.optString("id"), today = today();
+        if (to.compareTo(today) > 0) to = today;
+        if (from.compareTo(START) < 0) from = START;
+        int done = 0, tot = 0, guard = 0;
+        for (String d = from; d.compareTo(to) <= 0 && guard++ < 2000; d = addDays(d, 1)) {
+            if (!appliesOn(h, d)) continue;
+            boolean m = isMarked(c, d, id);
+            if (d.equals(today) && !m) continue; // hoje ainda não conta como falha
+            tot++;
+            if (m) done++;
+        }
+        return new int[]{done, tot};
+    }
+
+    /** {feitos, total, diasPerfeitos} entre from e to (limitado a hoje). */
+    public static int[] rangeStats(Context c, String from, String to) {
+        String today = today();
+        if (to.compareTo(today) > 0) to = today;
+        if (from.compareTo(START) < 0) from = START;
+        int done = 0, tot = 0, perfect = 0, guard = 0;
+        for (String d = from; d.compareTo(to) <= 0 && guard++ < 400; d = addDays(d, 1)) {
+            int[] p = progress(c, d);
+            done += p[0]; tot += p[1];
+            if (p[1] > 0 && p[0] == p[1]) perfect++;
+        }
+        return new int[]{done, tot, perfect};
+    }
+
+    /** Melhor dia da semana nos últimos 56 dias: {dow, porcentagem} ou null. */
+    public static int[] bestWeekday(Context c) {
+        int[] done = new int[7], tot = new int[7];
+        String today = today();
+        for (int i = 1; i <= 56; i++) {
+            String d = addDays(today, -i);
+            if (d.compareTo(START) < 0) break;
+            int[] p = progress(c, d);
+            done[dow(d)] += p[0]; tot[dow(d)] += p[1];
+        }
+        int best = -1; float bv = -1;
+        for (int i = 0; i < 7; i++) if (tot[i] > 0) { float v = (float) done[i] / tot[i]; if (v > bv) { bv = v; best = i; } }
+        return best < 0 ? null : new int[]{best, Math.round(bv * 100)};
+    }
+
     public static String greeting() {
         int h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
         if (h < 5) return "Boa madrugada";
