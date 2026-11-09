@@ -14,7 +14,8 @@ namespace Habitos
     // state = { v, habits:{id:{...,t}}, tasks:{id:{...,t}}, marks:{"data|id":{v,t}} }
     static class Model
     {
-        public static readonly DateTime Start = new DateTime(2026, 11, 6);
+        public static DateTime Start = new DateTime(2026, 11, 9);
+        static readonly DateTime OwnerStart = new DateTime(2026, 11, 9);
         public static readonly DateTime Exam = new DateTime(2027, 1, 24);
         static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         public static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Habitos");
@@ -40,11 +41,24 @@ namespace Habitos
                     {
                         state = new Dictionary<string, object>();
                         Shape(state);
-                        Seed(state);
-                        MigrateOld(state);
+                        // Só quem usou a primeira versão (o dono) recebe a rotina pronta; os outros começam do zero.
+                        if (File.Exists(Path.Combine(Dir, "dados.txt"))) { Seed(state); MigrateOld(state); }
                     }
                     Shape(state);
-                    if (EnsureV3(state) || fresh) Save();
+                    bool changed = fresh;
+                    if (IsOwner(state))
+                    {
+                        Start = OwnerStart;
+                        if (EnsureV3(state)) changed = true;
+                        if (EnsureV4(state)) changed = true;
+                    }
+                    else
+                    {
+                        var st = Settings.Get("start", "");
+                        if (st == "") { st = Key(DateTime.Today); Settings.Set("start", st); }
+                        Start = ParseDate(st);
+                    }
+                    if (changed) Save();
                     return state;
                 }
             }
@@ -153,6 +167,73 @@ namespace Habitos
             return changed;
         }
 
+        static bool IsOwner(Dictionary<string, object> s)
+        {
+            var hs = s.ContainsKey("habits") ? s["habits"] as Dictionary<string, object> : null;
+            return hs != null && hs.ContainsKey("concurso");
+        }
+
+        const long V4T = 1794190000000L;
+
+        // Semana do ENEM (9 a 15/11): pausa o concurso, cria o estudo do ENEM e a prova do dia 15.
+        static bool EnsureV4(Dictionary<string, object> s)
+        {
+            bool changed = false;
+            var hs = (Dictionary<string, object>)s["habits"];
+            object o;
+            if (hs.TryGetValue("concurso", out o))
+            {
+                var con = o as Dictionary<string, object>;
+                if (con != null && !con.ContainsKey("pauses"))
+                {
+                    con["pauses"] = new object[] { new Dictionary<string, object> { { "from", "2026-11-09" }, { "to", "2026-11-15" } } };
+                    con["t"] = Math.Max(L(con, "t") + 1, V4T);
+                    changed = true;
+                }
+            }
+            if (!hs.ContainsKey("enem"))
+            {
+                var h = H("enem", "Estudar pro ENEM", 2, new[] { 1, 2, 3, 4, 5, 6 }, "19:00", 0, "");
+                h["order"] = 2.5; h["from"] = "2026-11-09"; h["until"] = "2026-11-14"; h["color"] = "laranja";
+                h["times"] = new Dictionary<string, object> { { "6", "15:00" } };
+                h["notes"] = new Dictionary<string, object> {
+                    { "1", "Matemática: porcentagem, razão, proporção e regra de três" },
+                    { "2", "Matemática: funções, geometria e estatística" },
+                    { "3", "Física" }, { "4", "Química" }, { "5", "Biologia" },
+                    { "6", "Simulado: questões antigas de Matemática e Natureza" } };
+                h["t"] = V4T;
+                hs["enem"] = h;
+                changed = true;
+            }
+            var ts = (Dictionary<string, object>)s["tasks"];
+            if (!ts.ContainsKey("e_enem2"))
+            {
+                var e = Ev("e_enem2", "ENEM · 2º dia", "2026-11-15", null, "13:30", "18:30", 120, "Matemática e Natureza · portões das 12h às 13h", "laranja");
+                e["t"] = V4T;
+                ts["e_enem2"] = e;
+                changed = true;
+            }
+            return changed;
+        }
+
+        public static readonly string[][] Suggestions = {
+            new[] {"Beber 2 L de água", "", "azul", "0123456"},
+            new[] {"Arrumar a cama", "07:00", "ciano", "0123456"},
+            new[] {"Meditar 10 minutos", "07:10", "roxo", "0123456"},
+            new[] {"Exercício", "18:00", "laranja", "12345"},
+            new[] {"Ler 20 minutos", "21:30", "amarelo", "0123456"},
+            new[] {"Sem celular na cama", "22:45", "rosa", "0123456"},
+            new[] {"Dormir antes das 23h", "22:30", "verde", "0123456"},
+        };
+
+        public static void AddSuggestion(string[] sg)
+        {
+            var h = new Dictionary<string, object> {
+                {"id", NewId("h")}, {"title", sg[0]}, {"time", sg[1]}, {"color", sg[2]},
+                {"days", sg[3].Select(ch => (object)(ch - '0')).ToArray()}, {"note", ""}, {"remind", sg[1] != ""}, {"lead", 0}, {"order", NextOrder()} };
+            PutHabit(h);
+        }
+
         static void MigrateOld(Dictionary<string, object> s)
         {
             try
@@ -192,6 +273,7 @@ namespace Habitos
                         if (!mine.TryGetValue(kv.Key, out m) || L(t, "t") >= L((Dictionary<string, object>)m, "t")) mine[kv.Key] = t;
                     }
                 }
+                if (IsOwner(s)) { Start = OwnerStart; EnsureV3(s); EnsureV4(s); }
                 Save();
             }
             Notify();
@@ -241,7 +323,18 @@ namespace Habitos
 
         public static bool AppliesOn(Dictionary<string, object> h, DateTime d)
         {
-            return d >= Start && Days(h).Contains((int)d.DayOfWeek);
+            if (d < Start) return false;
+            var from = Str(h, "from"); var until = Str(h, "until");
+            if (from != "" && d < ParseDate(from)) return false;
+            if (until != "" && d > ParseDate(until)) return false;
+            object ps;
+            if (h.TryGetValue("pauses", out ps) && ps is System.Collections.IEnumerable)
+                foreach (var x in (System.Collections.IEnumerable)ps)
+                {
+                    var p = x as Dictionary<string, object>;
+                    if (p != null && Str(p, "from") != "" && d >= ParseDate(Str(p, "from")) && d <= ParseDate(Str(p, "to"))) return false;
+                }
+            return Days(h).Contains((int)d.DayOfWeek);
         }
 
         static string Dow(DateTime d) { return ((int)d.DayOfWeek).ToString(); }
@@ -250,9 +343,9 @@ namespace Habitos
         {
             if (Str(h, "id") == "dormir")
             {
-                if (d <= new DateTime(2026, 11, 13)) return 24 * 60;
-                if (d <= new DateTime(2026, 11, 20)) return 23 * 60 + 30;
-                if (d <= new DateTime(2026, 11, 27)) return 23 * 60;
+                if (d <= new DateTime(2026, 11, 15)) return 24 * 60;
+                if (d <= new DateTime(2026, 11, 22)) return 23 * 60 + 30;
+                if (d <= new DateTime(2026, 11, 29)) return 23 * 60;
             }
             var t = Str(h, "time");
             var times = Obj(h, "times");
@@ -612,7 +705,7 @@ namespace Habitos
 
         public static string EspTopic(DateTime d)
         {
-            int w = (int)Math.Floor((d - new DateTime(2026, 11, 9)).TotalDays / 7);
+            int w = (int)Math.Floor((d - new DateTime(2026, 11, 16)).TotalDays / 7);
             if (w < 0) w = 0;
             return w >= Esp.Length ? "Revisão geral e questões" : Esp[w];
         }

@@ -281,6 +281,40 @@ public class MainActivity extends Activity {
         root.addView(weekStrip(today), lp(MATCH, WRAP, dp(18)));
 
         List<Model.Item> items = Model.itemsFor(this, sel);
+        List<JSONObject> allHabits = Model.habits(this);
+        if (allHabits.size() < 4 && isToday) {
+            LinearLayout sc = new LinearLayout(this);
+            sc.setOrientation(LinearLayout.VERTICAL);
+            sc.setPadding(dp(18), dp(16), dp(18), dp(16));
+            sc.setBackground(round(SOFT, 0, 20));
+            sc.addView(text(allHabits.isEmpty() ? "Bem-vindo! Comece por aqui" : "Mais ideias de hábitos", 17, INK, MEDIUM));
+            TextView st = text("Toque pra adicionar. Depois dá pra mudar o horário e os dias segurando o dedo em cima.", 13, MUTED, REGULAR);
+            st.setPadding(0, dp(4), 0, dp(8));
+            sc.addView(st);
+            for (final String[] sg : Model.SUGGESTIONS) {
+                boolean exists = false;
+                for (JSONObject h : allHabits) if (h.optString("title").equals(sg[0])) exists = true;
+                if (exists) continue;
+                LinearLayout line = new LinearLayout(this);
+                line.setGravity(Gravity.CENTER_VERTICAL);
+                line.setPadding(0, dp(8), 0, dp(8));
+                View dot = new View(this);
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                g.setColor(Model.color(sg[2], dark));
+                dot.setBackground(g);
+                line.addView(dot, new LinearLayout.LayoutParams(dp(10), dp(10)));
+                TextView tl = text(sg[0], 15, INK, REGULAR);
+                tl.setPadding(dp(12), 0, 0, 0);
+                line.addView(tl, new LinearLayout.LayoutParams(0, WRAP, 1));
+                if (!sg[1].isEmpty()) line.addView(text(sg[1] + "   ", 13, MUTED, REGULAR));
+                line.addView(text("+", 20, ACCENT, MEDIUM));
+                line.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                    Model.addSuggestion(MainActivity.this, sg); changed(); } });
+                sc.addView(line);
+            }
+            root.addView(sc, lp(MATCH, WRAP, dp(16)));
+        }
         if (items.isEmpty()) {
             TextView em = text("Nada pra este dia.\nToque em + pra criar um compromisso, hábito ou tarefa.", 15, MUTED, REGULAR);
             em.setGravity(Gravity.CENTER);
@@ -1255,7 +1289,7 @@ public class MainActivity extends Activity {
 
     void showSettings() {
         LinearLayout f = form();
-        f.addView(label("Sincronização com o PC"));
+        f.addView(label("Sincronização com o PC (opcional)"));
         final EditText url = field("Cole aqui o link do script", Sync.url(this));
         url.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         f.addView(url);

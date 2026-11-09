@@ -10,7 +10,7 @@ using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("Hábitos")]
 [assembly: System.Reflection.AssemblyProduct("Hábitos")]
-[assembly: System.Reflection.AssemblyVersion("3.1.0.0")]
+[assembly: System.Reflection.AssemblyVersion("3.2.0.0")]
 
 namespace Habitos
 {
@@ -124,6 +124,7 @@ namespace Habitos
         Dictionary<string, object> next;
         DateTime lastToday = DateTime.Today;
         bool showFoot = true;
+        List<string[]> sugg = new List<string[]>();
         const int W = 330, TabsTop = 74, BodyTop = 116, RowH = 40, SecH = 26, FootH = 96;
 
         public DesktopWidget()
@@ -220,6 +221,9 @@ namespace Habitos
                 h = Theme.P(BodyTop + 76 + 12) + (next != null ? Theme.P(62) : 0) + Theme.P(4)
                     + groups * Theme.P(SecH) + Math.Max(1, items.Count) * Theme.P(RowH) + Theme.P(FootH) + Theme.P(14);
             }
+            sugg = mode == "dia" && sel == DateTime.Today && Model.Habits().Count < 4
+                ? Model.Suggestions.Where(sg => !Model.Habits().Any(hh => Model.Str(hh, "title") == sg[0])).ToList() : new List<string[]>();
+            if (sugg.Count > 0) h += Theme.P(44 + sugg.Count * 30 + 12);
             int max = Screen.FromControl(this).WorkingArea.Height - Theme.P(40);
             showFoot = mode != "dia" || h <= max;
             if (mode == "dia" && !showFoot) h -= Theme.P(FootH);
@@ -336,6 +340,29 @@ namespace Habitos
                 y += Theme.P(62);
             }
             y += Theme.P(4);
+
+            if (sugg.Count > 0)
+            {
+                var sc = new RectangleF(Theme.P(10), y, w - Theme.P(20), Theme.P(44 + sugg.Count * 30));
+                using (var path = Theme.Round(sc, Theme.P(14))) using (var b = new SolidBrush(Alpha(Theme.Accent, 28))) g.FillPath(b, path);
+                using (var f = Theme.F(10f, true)) using (var b = new SolidBrush(Theme.Ink))
+                    g.DrawString(Model.Habits().Count == 0 ? "Bem-vindo! Comece por aqui" : "Mais ideias de hábitos", f, b, sc.X + Theme.P(12), sc.Y + Theme.P(10));
+                float sy = sc.Y + Theme.P(38);
+                for (int i = 0; i < sugg.Count; i++)
+                {
+                    var sg = sugg[i];
+                    var r = new RectangleF(sc.X + Theme.P(4), sy, sc.Width - Theme.P(8), Theme.P(28));
+                    string key = "sug:" + sg[0];
+                    HoverFill(g, r, key, Theme.P(8));
+                    using (var b = new SolidBrush(Model.ColorOf(sg[2]))) g.FillEllipse(b, r.X + Theme.P(10), r.Y + Theme.P(10), Theme.P(8), Theme.P(8));
+                    using (var f = Theme.F(9.5f)) using (var b = new SolidBrush(Theme.Ink)) g.DrawString(sg[0], f, b, new RectangleF(r.X + Theme.P(26), r.Y, r.Width - Theme.P(90), r.Height), FmtL);
+                    using (var f = Theme.F(8.5f)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString(sg[1], f, b, new RectangleF(r.Right - Theme.P(72), r.Y, Theme.P(44), r.Height), FmtL);
+                    using (var f = Theme.F(12f, true)) using (var b = new SolidBrush(Theme.Accent)) g.DrawString("+", f, b, new RectangleF(r.Right - Theme.P(24), r.Y, Theme.P(20), r.Height), FmtC);
+                    Hit(r, key);
+                    sy += Theme.P(30);
+                }
+                y = sc.Bottom + Theme.P(12);
+            }
 
             float rh = Theme.P(RowH), listEnd = Height - (showFoot ? Theme.P(FootH) : 0) - Theme.P(8);
             if (items.Count == 0)
@@ -697,6 +724,7 @@ namespace Habitos
                 else if (k == "mnext") { monthStart = monthStart.AddMonths(1); Reload(); }
                 else if (k.StartsWith("day:")) GoDay(Model.ParseDate(k.Substring(4)));
                 else if (k.StartsWith("habit:")) Editors.Edit("h", k.Substring(6));
+                else if (k.StartsWith("sug:")) { var sg = Model.Suggestions.FirstOrDefault(x => x[0] == k.Substring(4)); if (sg != null) { Model.AddSuggestion(sg); Program.SyncSoon(); } }
                 else if (k.StartsWith("item:"))
                 {
                     var parts = k.Split(':');

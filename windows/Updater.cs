@@ -11,7 +11,7 @@ namespace Habitos
     // Confere no GitHub se há versão nova; se houver, baixa, troca o .exe e reabre.
     static class Updater
     {
-        public const int Version = 7;
+        public const int Version = 8;
         const string Latest = "https://raw.githubusercontent.com/Cruxyzz/habitos/main/latest.json";
         static bool busy;
 

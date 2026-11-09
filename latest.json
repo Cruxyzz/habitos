@@ -1,4 +1,4 @@
 {
-  "android": { "version": 7, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.apk", "notes": "Resumo com estatísticas, tema, cor de destaque e seu nome" },
-  "windows": { "version": 7, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.exe", "notes": "Resumo com estatísticas, tema, cor de destaque e transparência" }
+  "android": { "version": 8, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.apk", "notes": "Semana do ENEM e app pronto pra compartilhar" },
+  "windows": { "version": 8, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.exe", "notes": "Semana do ENEM e app pronto pra compartilhar" }
 }

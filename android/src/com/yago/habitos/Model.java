@@ -21,7 +21,8 @@ import java.util.List;
  */
 public final class Model {
 
-    public static final String START = "2026-11-06";
+    public static String START = "2026-11-09";
+    static final String OWNER_START = "2026-11-09";
     public static final String EXAM = "2027-01-24";
 
     private static JSONObject state;
@@ -41,11 +42,24 @@ public final class Model {
             state = new JSONObject();
         }
         ensureShape(state);
+        boolean changed = false;
         if (raw == null) {
-            seed(state);
-            migrateOld(c, state);
+            // Só quem usou a primeira versão do app (o dono) recebe a rotina pronta; os outros começam do zero.
+            boolean hadV1 = false;
+            for (String k : prefs(c).getAll().keySet()) if (k.startsWith("d_")) { hadV1 = true; break; }
+            if (hadV1) { seed(state); migrateOld(c, state); }
+            changed = true;
         }
-        if (raw == null || ensureV3(state)) save(c);
+        if (isOwner(state)) {
+            START = OWNER_START;
+            if (ensureV3(state)) changed = true;
+            if (ensureV4(state)) changed = true;
+        } else {
+            String st = prefs(c).getString("start", "");
+            if (st.isEmpty()) { st = today(); prefs(c).edit().putString("start", st).apply(); }
+            START = st;
+        }
+        if (changed) save(c);
         return state;
     }
 
@@ -72,7 +86,7 @@ public final class Model {
 
     // ---------------- dados iniciais ----------------
 
-    static JSONObject habit(String id, String title, int order, int[] days, String time, int lead, String note) {
+    static JSONObject habit(String id, String title, double order, int[] days, String time, int lead, String note) {
         JSONObject h = new JSONObject();
         try {
             h.put("id", id).put("title", title).put("order", order).put("time", time)
@@ -168,6 +182,53 @@ public final class Model {
         return changed;
     }
 
+    /** Dados do dono do app (tem o hábito "concurso" criado na primeira versão). */
+    static boolean isOwner(JSONObject s) {
+        JSONObject hs = s.optJSONObject("habits");
+        return hs != null && hs.has("concurso");
+    }
+
+    static final long V4_T = 1794190000000L;
+
+    /** Semana do ENEM (9 a 15/11): pausa o concurso, cria o estudo do ENEM e a prova do dia 15. */
+    static boolean ensureV4(JSONObject s) {
+        boolean changed = false;
+        try {
+            JSONObject hs = s.getJSONObject("habits");
+            JSONObject con = hs.optJSONObject("concurso");
+            if (con != null && !con.has("pauses")) {
+                con.put("pauses", new JSONArray().put(new JSONObject().put("from", "2026-11-09").put("to", "2026-11-15")));
+                con.put("t", Math.max(con.optLong("t") + 1, V4_T));
+                changed = true;
+            }
+            if (!hs.has("enem")) {
+                JSONObject h = habit("enem", "Estudar pro ENEM", 2.5, new int[]{1, 2, 3, 4, 5, 6}, "19:00", 0, "");
+                h.put("from", "2026-11-09").put("until", "2026-11-14").put("color", "laranja");
+                h.put("times", new JSONObject().put("6", "15:00"));
+                h.put("notes", new JSONObject()
+                        .put("1", "Matemática: porcentagem, razão, proporção e regra de três")
+                        .put("2", "Matemática: funções, geometria e estatística")
+                        .put("3", "Física")
+                        .put("4", "Química")
+                        .put("5", "Biologia")
+                        .put("6", "Simulado: questões antigas de Matemática e Natureza"));
+                h.put("t", V4_T);
+                hs.put("enem", h);
+                changed = true;
+            }
+            JSONObject ts = s.getJSONObject("tasks");
+            if (!ts.has("e_enem2")) {
+                JSONObject e = event("e_enem2", "ENEM · 2º dia", "2026-11-15", null, "13:30", "18:30", 120,
+                        "Matemática e Natureza · portões das 12h às 13h", "laranja");
+                e.put("t", V4_T);
+                ts.put("e_enem2", e);
+                changed = true;
+            }
+        } catch (JSONException ignored) {
+        }
+        return changed;
+    }
+
     /** Traz as marcações da versão 1 do app (ids antigos). */
     static void migrateOld(Context c, JSONObject s) {
         SharedPreferences p = prefs(c);
@@ -206,6 +267,7 @@ public final class Model {
                 }
             }
         }
+        if (isOwner(s)) { START = OWNER_START; ensureV3(s); ensureV4(s); }
         save(c);
     }
 
@@ -242,6 +304,28 @@ public final class Model {
         save(c);
     }
 
+    /** Sugestões para quem está começando: {título, horário, cor, dias (string)}. */
+    public static final String[][] SUGGESTIONS = {
+            {"Beber 2 L de água", "", "azul", "0123456"},
+            {"Arrumar a cama", "07:00", "ciano", "0123456"},
+            {"Meditar 10 minutos", "07:10", "roxo", "0123456"},
+            {"Exercício", "18:00", "laranja", "12345"},
+            {"Ler 20 minutos", "21:30", "amarelo", "0123456"},
+            {"Sem celular na cama", "22:45", "rosa", "0123456"},
+            {"Dormir antes das 23h", "22:30", "verde", "0123456"},
+    };
+
+    public static void addSuggestion(Context c, String[] sg) {
+        JSONObject h = new JSONObject();
+        try {
+            JSONArray d = new JSONArray();
+            for (char ch : sg[3].toCharArray()) d.put(ch - '0');
+            h.put("id", newId("h")).put("title", sg[0]).put("time", sg[1]).put("color", sg[2]).put("days", d)
+                    .put("note", "").put("remind", !sg[1].isEmpty()).put("lead", 0).put("order", nextOrder(c));
+        } catch (JSONException ignored) { }
+        putHabit(c, h);
+    }
+
     public static double nextOrder(Context c) {
         double max = 0;
         for (JSONObject h : habits(c)) max = Math.max(max, h.optDouble("order", 0));
@@ -250,6 +334,14 @@ public final class Model {
 
     public static boolean appliesOn(JSONObject h, String date) {
         if (date.compareTo(START) < 0) return false;
+        String from = h.optString("from", ""), until = h.optString("until", "");
+        if (!from.isEmpty() && date.compareTo(from) < 0) return false;
+        if (!until.isEmpty() && date.compareTo(until) > 0) return false;
+        JSONArray ps = h.optJSONArray("pauses");
+        if (ps != null) for (int i = 0; i < ps.length(); i++) {
+            JSONObject p = ps.optJSONObject(i);
+            if (p != null && date.compareTo(p.optString("from")) >= 0 && date.compareTo(p.optString("to")) <= 0) return false;
+        }
         int w = dow(date);
         JSONArray d = h.optJSONArray("days");
         if (d == null) return false;
@@ -260,9 +352,9 @@ public final class Model {
     /** Horário do hábito nesse dia, em minutos (pode passar de 1440), ou -1. */
     public static int timeOf(JSONObject h, String date) {
         if ("dormir".equals(h.optString("id"))) {
-            if (date.compareTo("2026-11-13") <= 0) return 24 * 60;
-            if (date.compareTo("2026-11-20") <= 0) return 23 * 60 + 30;
-            if (date.compareTo("2026-11-27") <= 0) return 23 * 60;
+            if (date.compareTo("2026-11-15") <= 0) return 24 * 60;
+            if (date.compareTo("2026-11-22") <= 0) return 23 * 60 + 30;
+            if (date.compareTo("2026-11-29") <= 0) return 23 * 60;
         }
         String t = h.optString("time", "");
         JSONObject times = h.optJSONObject("times");
@@ -700,7 +792,7 @@ public final class Model {
     };
 
     public static String espTopic(String date) {
-        long w = (toMillis(date) - toMillis("2026-11-09")) / (7L * 86400000L);
+        long w = (toMillis(date) - toMillis("2026-11-16")) / (7L * 86400000L);
         if (w < 0) w = 0;
         return w >= ESP.length ? "Revisão geral e questões" : ESP[(int) w];
     }
