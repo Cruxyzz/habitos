@@ -440,6 +440,24 @@ namespace Habitos
             lock (Lock) { object m; return Coll("marks").TryGetValue(Key(d) + "|" + id, out m) && Bool((Dictionary<string, object>)m, "v", false); }
         }
 
+        public static Dictionary<string, object> MarkObj(string key)
+        {
+            lock (Lock) { object m; return Coll("marks").TryGetValue(key, out m) ? m as Dictionary<string, object> : null; }
+        }
+
+        public static void PutMark(string key, Dictionary<string, object> o)
+        {
+            lock (Lock) { o["t"] = Now(); Coll("marks")[key] = o; Save(); }
+            Notify();
+        }
+
+        public static List<KeyValuePair<string, Dictionary<string, object>>> MarksWithPrefix(string prefix)
+        {
+            lock (Lock)
+                return Coll("marks").Where(kv => kv.Key.StartsWith(prefix) && kv.Value is Dictionary<string, object>)
+                    .Select(kv => new KeyValuePair<string, Dictionary<string, object>>(kv.Key, (Dictionary<string, object>)kv.Value)).ToList();
+        }
+
         public static void SetMark(DateTime d, string id, bool v)
         {
             lock (Lock) { Coll("marks")[Key(d) + "|" + id] = new Dictionary<string, object> { { "v", v }, { "t", Now() } }; Save(); }

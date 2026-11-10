@@ -187,7 +187,8 @@ public class MainActivity extends Activity {
         root.addView(top);
 
         String title;
-        if (mode.equals("resumo")) title = "Resumo";
+        if (mode.equals("dinheiro")) title = "Dinheiro";
+        else if (mode.equals("resumo")) title = "Resumo";
         else if (mode.equals("mes")) title = Model.monthName(monthAnchor == null ? sel : monthAnchor);
         else if (mode.equals("semana")) title = "Semana";
         else title = isToday ? "Hoje" : (sel.equals(Model.addDays(today, -1)) ? "Ontem" : Model.DOW[Model.dow(sel)]);
@@ -199,7 +200,8 @@ public class MainActivity extends Activity {
         root.addView(segmented(), lp(MATCH, WRAP, dp(16)));
         updateBanner();
 
-        if (mode.equals("resumo")) renderStats(today);
+        if (mode.equals("dinheiro")) renderMoney(today);
+        else if (mode.equals("resumo")) renderStats(today);
         else if (mode.equals("semana")) renderWeek(today);
         else if (mode.equals("mes")) renderMonth(today);
         else renderDay(today);
@@ -209,11 +211,12 @@ public class MainActivity extends Activity {
         LinearLayout seg = new LinearLayout(this);
         seg.setPadding(dp(4), dp(4), dp(4), dp(4));
         seg.setBackground(round(dark ? SURFACE : 0xFFECEFEC, 0, 99));
-        String[] keys = {"dia", "semana", "mes", "resumo"}, labels = {"Dia", "Semana", "Mês", "Resumo"};
-        for (int i = 0; i < 4; i++) {
+        String[] keys = {"dia", "semana", "mes", "resumo", "dinheiro"}, labels = {"Dia", "Semana", "Mês", "Resumo", "Dinheiro"};
+        for (int i = 0; i < 5; i++) {
             final String k = keys[i];
             boolean on = mode.equals(k);
-            TextView t = text(labels[i], 14, on ? INK : MUTED, MEDIUM);
+            TextView t = text(labels[i], 13, on ? INK : MUTED, MEDIUM);
+            t.setSingleLine(true);
             t.setGravity(Gravity.CENTER);
             t.setPadding(0, dp(8), 0, dp(8));
             if (on) { t.setBackground(round(dark ? 0xFF2A333A : 0xFFFFFFFF, 0, 99)); t.setElevation(dp(1)); }
@@ -385,6 +388,419 @@ public class MainActivity extends Activity {
         r.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
             editEvent(Model.taskById(MainActivity.this, it.id)); } });
         return r;
+    }
+
+    // ---------------- Dinheiro ----------------
+
+    void renderMoney(final String today) {
+        JSONObject cf = Fin.cfg(this);
+        if (cf == null) {
+            LinearLayout c = new LinearLayout(this);
+            c.setOrientation(LinearLayout.VERTICAL);
+            c.setPadding(dp(18), dp(18), dp(18), dp(18));
+            c.setBackground(round(SOFT, 0, 22));
+            c.addView(text("Vamos organizar sua grana", 18, INK, MEDIUM));
+            TextView d = text("Conta quanto você recebe e quando. O app separa uma parte pra guardar logo que o dinheiro cai e mostra quanto dá pra gastar por semana e por dia.", 14, MUTED, REGULAR);
+            d.setPadding(0, dp(6), 0, dp(14));
+            c.addView(d);
+            TextView b = pill("Começar", true);
+            b.setPadding(dp(20), dp(10), dp(20), dp(10));
+            b.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { setupMoney(); } });
+            c.addView(b, new LinearLayout.LayoutParams(WRAP, WRAP));
+            root.addView(c, lp(MATCH, WRAP, dp(16)));
+            return;
+        }
+        Fin.Summary s = Fin.summary(this);
+
+        // Cartão principal
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(dp(18), dp(18), dp(18), dp(18));
+        hero.setBackground(round(SURFACE, dark ? 0 : LINE, 22));
+        TextView l1 = text("PODE GASTAR ATÉ " + Model.shortDate(s.to).toUpperCase(), 12, MUTED, MEDIUM);
+        l1.setLetterSpacing(0.08f);
+        hero.addView(l1);
+        hero.addView(text(Fin.brl(s.left), 40, s.left < 0 ? LATE : INK, DISPLAY));
+        hero.addView(text(s.left < 0 ? "Passou do planejado. Segure os gastos até a próxima mesada." :
+                "≈ " + Fin.brl(s.perDay) + " por dia · " + s.daysLeft + (s.daysLeft == 1 ? " dia" : " dias") + " até a próxima mesada", 14, s.left < 0 ? LATE : MUTED, REGULAR));
+        hero.addView(new Bar(this, s.spendable <= 0 ? 1 : Math.min(1f, (float) s.spent / s.spendable)), lp(MATCH, dp(6), dp(12)));
+        hero.addView(text("Gastou " + Fin.brl(s.spent) + " de " + Fin.brl(Math.max(0, s.spendable)), 13, MUTED, REGULAR), lp(WRAP, WRAP, dp(6)));
+        root.addView(hero, lp(MATCH, WRAP, dp(16)));
+
+        // Botões rápidos
+        LinearLayout btns = new LinearLayout(this);
+        String[][] bs = {{"out", "− Gasto"}, {"in", "+ Entrada"}, {"save", "Guardar"}};
+        for (int i = 0; i < bs.length; i++) {
+            final String ty = bs[i][0];
+            TextView b = pill(bs[i][1], i == 0);
+            b.setPadding(0, dp(12), 0, dp(12));
+            b.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { txDialog(ty, null); } });
+            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, WRAP, 1);
+            l.setMargins(i == 0 ? 0 : dp(4), 0, i == bs.length - 1 ? 0 : dp(4), 0);
+            btns.addView(b, l);
+        }
+        root.addView(btns, lp(MATCH, WRAP, dp(10)));
+
+        // Semana e plano
+        LinearLayout wk = new LinearLayout(this);
+        wk.setOrientation(LinearLayout.VERTICAL);
+        wk.setPadding(dp(16), dp(14), dp(16), dp(14));
+        wk.setBackground(round(SURFACE, dark ? 0 : LINE, 18));
+        LinearLayout wh = new LinearLayout(this);
+        wh.addView(text("Esta semana", 15, INK, MEDIUM), new LinearLayout.LayoutParams(0, WRAP, 1));
+        wh.addView(text(Fin.brl(s.weekSpent) + " de " + Fin.brl(Math.max(0, s.weekLimit)), 14, s.weekSpent > s.weekLimit ? LATE : MUTED, MEDIUM));
+        wk.addView(wh);
+        wk.addView(new Bar(this, s.weekLimit <= 0 ? 0 : Math.min(1f, (float) s.weekSpent / s.weekLimit)), lp(MATCH, dp(6), dp(10)));
+        root.addView(wk, lp(MATCH, WRAP, dp(10)));
+
+        LinearLayout plan = new LinearLayout(this);
+        plan.setOrientation(LinearLayout.VERTICAL);
+        plan.setPadding(dp(16), dp(14), dp(16), dp(14));
+        plan.setBackground(round(SURFACE, dark ? 0 : LINE, 18));
+        LinearLayout ph = new LinearLayout(this);
+        ph.setGravity(Gravity.CENTER_VERTICAL);
+        ph.addView(text("Plano do período", 15, INK, MEDIUM), new LinearLayout.LayoutParams(0, WRAP, 1));
+        TextView ed = text("Editar", 13, ACCENT, MEDIUM);
+        ed.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { setupMoney(); } });
+        ph.addView(ed);
+        plan.addView(ph);
+        plan.addView(text(Model.shortDate(s.from) + " a " + Model.shortDate(s.to), 13, MUTED, REGULAR));
+        planLine(plan, "Mesada", Fin.brl(s.allowance), INK);
+        if (s.extras > 0) planLine(plan, "Entradas extras", "+ " + Fin.brl(s.extras), INK);
+        planLine(plan, "Guardar (" + cf.optInt("savePct") + "%)", Fin.brl(s.saved) + " de " + Fin.brl(s.saveTarget), s.saved >= s.saveTarget ? ACCENT : LATE);
+        planLine(plan, "Gastos", "− " + Fin.brl(s.spent), INK);
+        if (s.saved < s.saveTarget) {
+            TextView tip = text("Dica: guarde os " + Fin.brl(s.saveTarget - s.saved) + " que faltam logo, antes de gastar.", 13, LATE, REGULAR);
+            tip.setPadding(0, dp(8), 0, 0);
+            plan.addView(tip);
+        }
+        root.addView(plan, lp(MATCH, WRAP, dp(10)));
+
+        // Metas
+        LinearLayout gh = new LinearLayout(this);
+        gh.setGravity(Gravity.CENTER_VERTICAL);
+        TextView gt = text("METAS · TOTAL GUARDADO " + Fin.brl(Fin.totalSaved(this)), 12, MUTED, MEDIUM);
+        gt.setLetterSpacing(0.06f);
+        gh.addView(gt, new LinearLayout.LayoutParams(0, WRAP, 1));
+        TextView ng = text("+ Nova", 13, ACCENT, MEDIUM);
+        ng.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { goalDialog(null); } });
+        gh.addView(ng);
+        root.addView(gh, lp(MATCH, WRAP, dp(24)));
+        List<JSONObject> goals = Fin.goals(this);
+        if (goals.isEmpty()) root.addView(text("Crie uma meta pra algo que você quer comprar. O que você guardar vai pra ela.", 14, MUTED, REGULAR), lp(MATCH, WRAP, dp(8)));
+        for (final JSONObject g : goals) {
+            long saved = Fin.goalSaved(this, g.optString("id")), target = g.optLong("target");
+            int col = Model.color(g.optString("color", "verde"), dark);
+            LinearLayout gc = new LinearLayout(this);
+            gc.setOrientation(LinearLayout.VERTICAL);
+            gc.setPadding(dp(16), dp(14), dp(16), dp(14));
+            gc.setBackground(round(SURFACE, dark ? 0 : LINE, 18));
+            LinearLayout t1 = new LinearLayout(this);
+            t1.addView(text(g.optString("title"), 15, INK, MEDIUM), new LinearLayout.LayoutParams(0, WRAP, 1));
+            t1.addView(text(target <= 0 ? "" : Math.min(100, Math.round(100f * saved / target)) + "%", 14, col, MEDIUM));
+            gc.addView(t1);
+            Bar gb = new Bar(this, target <= 0 ? 0 : Math.min(1f, (float) saved / target));
+            gc.addView(gb, lp(MATCH, dp(6), dp(8)));
+            gc.addView(text(Fin.brl(saved) + " de " + Fin.brl(target) + (saved < target ? " · faltam " + Fin.brl(target - saved) : " · conseguiu!"), 13, MUTED, REGULAR), lp(WRAP, WRAP, dp(6)));
+            gc.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { goalDialog(g); } });
+            root.addView(gc, lp(MATCH, WRAP, dp(8)));
+        }
+
+        // Categorias
+        long max = 0;
+        for (long v : s.byCat) max = Math.max(max, v);
+        if (max > 0) {
+            TextView ct = text("ONDE VOCÊ GASTOU", 12, MUTED, MEDIUM);
+            ct.setLetterSpacing(0.08f);
+            root.addView(ct, lp(WRAP, WRAP, dp(24)));
+            LinearLayout cc = new LinearLayout(this);
+            cc.setOrientation(LinearLayout.VERTICAL);
+            cc.setPadding(dp(16), dp(10), dp(16), dp(14));
+            cc.setBackground(round(SURFACE, dark ? 0 : LINE, 18));
+            Integer[] idx = new Integer[Fin.OUT_CATS.length];
+            for (int i = 0; i < idx.length; i++) idx[i] = i;
+            final long[] by = s.byCat;
+            java.util.Arrays.sort(idx, new java.util.Comparator<Integer>() { public int compare(Integer a, Integer b) { return Long.compare(by[b], by[a]); } });
+            for (int i : idx) {
+                if (by[i] == 0) continue;
+                LinearLayout r = new LinearLayout(this);
+                r.addView(text(Fin.OUT_NAMES[i], 14, INK, REGULAR), new LinearLayout.LayoutParams(0, WRAP, 1));
+                r.addView(text(Fin.brl(by[i]), 14, MUTED, MEDIUM));
+                cc.addView(r, lp(MATCH, WRAP, dp(8)));
+                ColorBar cb = new ColorBar(this, (float) by[i] / max, Model.color(Fin.OUT_COLORS[i], dark));
+                cc.addView(cb, lp(MATCH, dp(5), dp(5)));
+            }
+            root.addView(cc, lp(MATCH, WRAP, dp(8)));
+        }
+
+        // Lançamentos
+        List<JSONObject> txs = Fin.txs(this);
+        if (!txs.isEmpty()) {
+            TextView lt = text("ÚLTIMOS LANÇAMENTOS", 12, MUTED, MEDIUM);
+            lt.setLetterSpacing(0.08f);
+            root.addView(lt, lp(WRAP, WRAP, dp(24)));
+            int n = 0;
+            for (final JSONObject t : txs) {
+                if (n++ >= 20) break;
+                String ty = t.optString("type");
+                LinearLayout r = new LinearLayout(this);
+                r.setGravity(Gravity.CENTER_VERTICAL);
+                r.setPadding(dp(16), dp(12), dp(16), dp(12));
+                r.setBackground(round(SURFACE, dark ? 0 : LINE, 14));
+                LinearLayout tx = new LinearLayout(this);
+                tx.setOrientation(LinearLayout.VERTICAL);
+                String note = t.optString("note", "");
+                tx.addView(text(note.isEmpty() ? Fin.catName(ty, t.optString("cat")) : note, 15, INK, REGULAR));
+                String sub = Model.shortDate(t.optString("date")) + " · " + Fin.catName(ty, t.optString("cat"));
+                if ("save".equals(ty) && !t.optString("goal").isEmpty()) {
+                    for (JSONObject g : goals) if (g.optString("id").equals(t.optString("goal"))) sub = Model.shortDate(t.optString("date")) + " · pra " + g.optString("title");
+                }
+                tx.addView(text(sub, 12, MUTED, REGULAR));
+                r.addView(tx, new LinearLayout.LayoutParams(0, WRAP, 1));
+                long a = t.optLong("amount");
+                String sign = "out".equals(ty) ? "− " : "in".equals(ty) ? "+ " : "";
+                r.addView(text(sign + Fin.brl(a), 15, "in".equals(ty) || "save".equals(ty) ? ACCENT : INK, MEDIUM));
+                r.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { txDialog(t.optString("type"), t); } });
+                root.addView(r, lp(MATCH, WRAP, dp(6)));
+            }
+        }
+    }
+
+    void planLine(LinearLayout parent, String label, String value, int color) {
+        LinearLayout r = new LinearLayout(this);
+        r.addView(text(label, 14, MUTED, REGULAR), new LinearLayout.LayoutParams(0, WRAP, 1));
+        r.addView(text(value, 14, color, MEDIUM));
+        parent.addView(r, lp(MATCH, WRAP, dp(8)));
+    }
+
+    class ColorBar extends View {
+        final float f; final int col;
+        final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        ColorBar(Context c, float f, int col) { super(c); this.f = f; this.col = col; }
+        @Override protected void onDraw(Canvas cv) {
+            float h = getHeight(), w = getWidth();
+            p.setColor(LINE);
+            cv.drawRoundRect(new RectF(0, 0, w, h), h / 2, h / 2, p);
+            p.setColor(col);
+            cv.drawRoundRect(new RectF(0, 0, Math.max(h, w * f), h), h / 2, h / 2, p);
+        }
+    }
+
+    EditText moneyField(String hint, long cents) {
+        EditText e = new EditText(this);
+        e.setHint(hint);
+        if (cents > 0) e.setText(Fin.brl(cents).replace("R$ ", ""));
+        e.setSingleLine(true);
+        e.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        e.setKeyListener(android.text.method.DigitsKeyListener.getInstance("0123456789,."));
+        e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
+        return e;
+    }
+
+    LinearLayout pillGrid(final String[] keys, final String[] names, final String[] sel, final int perRow) {
+        final LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        final Runnable[] draw = new Runnable[1];
+        draw[0] = new Runnable() { public void run() {
+            box.removeAllViews();
+            LinearLayout row = null;
+            for (int i = 0; i < keys.length; i++) {
+                if (i % perRow == 0) { row = new LinearLayout(MainActivity.this); box.addView(row, lp(MATCH, WRAP, dp(6))); }
+                final String k = keys[i];
+                TextView p = pill(names[i], k.equals(sel[0]));
+                p.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                p.setPadding(dp(6), dp(9), dp(6), dp(9));
+                p.setSingleLine(true);
+                p.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { sel[0] = k; draw[0].run(); } });
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, WRAP, 1);
+                l.setMargins(dp(2), 0, dp(2), 0);
+                row.addView(p, l);
+            }
+            int rest = keys.length % perRow;
+            if (rest != 0) for (int i = rest; i < perRow; i++) row.addView(new View(MainActivity.this), new LinearLayout.LayoutParams(0, 1, 1));
+        } };
+        draw[0].run();
+        return box;
+    }
+
+    void setupMoney() {
+        JSONObject cf = Fin.cfg(this);
+        LinearLayout f = form();
+        f.addView(label("Quanto você recebe por mês? (mesada)"));
+        final EditText amount = moneyField("0,00", cf == null ? 0 : cf.optLong("allowance"));
+        f.addView(amount);
+        f.addView(label("Em que dia do mês você recebe?"));
+        final EditText day = field("Ex.: 5", cf == null ? "" : String.valueOf(cf.optInt("payday", 1)));
+        day.setInputType(InputType.TYPE_CLASS_NUMBER);
+        f.addView(day);
+        f.addView(label("Quanto guardar assim que receber?"));
+        final String[] pct = {cf == null ? "20" : String.valueOf(cf.optInt("savePct", 20))};
+        f.addView(pillGrid(new String[]{"0", "10", "20", "30", "50"}, new String[]{"Nada", "10%", "20%", "30%", "50%"}, pct, 5));
+        TextView tip = text("Guardar primeiro e gastar o resto é o jeito mais fácil de juntar dinheiro. 20% é um bom começo.", 13, MUTED, REGULAR);
+        tip.setPadding(dp(4), dp(12), 0, 0);
+        f.addView(tip);
+        final AlertDialog dlg = new AlertDialog.Builder(this).setTitle("Sua mesada").setView(wrap(f))
+                .setNegativeButton("Cancelar", null).setPositiveButton("Salvar", null).create();
+        dlg.setOnShowListener(new DialogInterface.OnShowListener() { public void onShow(DialogInterface di) {
+            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                long a = Fin.parse(amount.getText().toString());
+                if (a <= 0) { amount.setError("Coloque o valor"); return; }
+                int d;
+                try { d = Integer.parseInt(day.getText().toString().trim()); } catch (Exception e) { d = 1; }
+                if (d < 1 || d > 31) { day.setError("Um dia de 1 a 31"); return; }
+                Fin.setCfg(MainActivity.this, a, d, Integer.parseInt(pct[0]));
+                dlg.dismiss();
+                changed();
+            } });
+        } });
+        dlg.show();
+    }
+
+    void txDialog(final String type, final JSONObject existing) {
+        final boolean isNew = existing == null;
+        LinearLayout f = form();
+        f.addView(label("Valor"));
+        final EditText amount = moneyField("0,00", isNew ? 0 : existing.optLong("amount"));
+        f.addView(amount);
+        final String[] cat = {isNew ? ("out".equals(type) ? "lanche" : "extra") : existing.optString("cat")};
+        final String[] goal = {isNew ? "" : existing.optString("goal", "")};
+        if ("out".equals(type)) {
+            f.addView(label("Com o quê?"));
+            f.addView(pillGrid(Fin.OUT_CATS, new String[]{"Lanche", "Transporte", "Lazer", "Jogos", "Roupas", "Escola", "Assinaturas", "Presentes", "Outros"}, cat, 3));
+        } else if ("in".equals(type)) {
+            f.addView(label("De onde veio?"));
+            f.addView(pillGrid(Fin.IN_CATS, new String[]{"Extra", "Presente", "Venda", "Outros"}, cat, 4));
+        } else {
+            List<JSONObject> goals = Fin.goals(this);
+            if (!goals.isEmpty()) {
+                f.addView(label("Pra qual meta?"));
+                String[] ks = new String[goals.size() + 1], ns = new String[goals.size() + 1];
+                ks[0] = ""; ns[0] = "Reserva";
+                for (int i = 0; i < goals.size(); i++) { ks[i + 1] = goals.get(i).optString("id"); ns[i + 1] = goals.get(i).optString("title"); }
+                f.addView(pillGrid(ks, ns, goal, 2));
+            }
+            TextView tip = text("Pra tirar dinheiro de uma meta, use um valor negativo começando com − ou use Excluir num lançamento.", 12, MUTED, REGULAR);
+            tip.setPadding(dp(4), dp(10), 0, 0);
+            f.addView(tip);
+        }
+        f.addView(label("Descrição (opcional)"));
+        final EditText note = field("save".equals(type) ? "Ex.: guardei da mesada" : "Ex.: lanche na escola", isNew ? "" : existing.optString("note"));
+        f.addView(note);
+        final String[] date = {isNew ? Model.today() : existing.optString("date")};
+        f.addView(label("Data"));
+        final TextView db = pill(Model.longDate(date[0]), false);
+        db.setPadding(dp(16), dp(10), dp(16), dp(10));
+        db.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            pickDate(date[0], new TimeSet() { public void set(String x) { if (!x.isEmpty()) { date[0] = x; db.setText(Model.longDate(x)); } } });
+        } });
+        f.addView(db, new LinearLayout.LayoutParams(WRAP, WRAP));
+
+        String title = "out".equals(type) ? "Gasto" : "in".equals(type) ? "Entrada" : "Guardar dinheiro";
+        AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle(isNew ? title : "Editar · " + title.toLowerCase()).setView(wrap(f))
+                .setNegativeButton("Cancelar", null).setPositiveButton("Salvar", null);
+        if (!isNew) b.setNeutralButton("Excluir", null);
+        final AlertDialog dlg = b.create();
+        dlg.setOnShowListener(new DialogInterface.OnShowListener() { public void onShow(DialogInterface di) {
+            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                String raw = amount.getText().toString().trim();
+                boolean neg = raw.startsWith("-") || raw.startsWith("−");
+                long a = Fin.parse(raw.replace("-", "").replace("−", ""));
+                if (a <= 0) { amount.setError("Coloque o valor"); return; }
+                if (neg && "save".equals(type)) a = -a;
+                if (isNew) Fin.addTx(MainActivity.this, type, a, cat[0], note.getText().toString().trim(), date[0], goal[0]);
+                else {
+                    try {
+                        JSONObject o = new JSONObject(existing.toString());
+                        o.put("amount", a).put("cat", cat[0]).put("note", note.getText().toString().trim()).put("date", date[0]).put("goal", goal[0]);
+                        Fin.updateTx(MainActivity.this, existing.optString("key"), o);
+                    } catch (JSONException ignored) { }
+                }
+                dlg.dismiss();
+                changed();
+            } });
+            if (!isNew) dlg.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                Fin.deleteTx(MainActivity.this, existing.optString("key"));
+                dlg.dismiss();
+                changed();
+            } });
+        } });
+        dlg.show();
+        amount.requestFocus();
+        dlg.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+    }
+
+    void goalDialog(final JSONObject existing) {
+        final boolean isNew = existing == null;
+        LinearLayout f = form();
+        final EditText title = field("O que você quer comprar?", isNew ? "" : existing.optString("title"));
+        f.addView(title);
+        f.addView(label("Quanto custa?"));
+        final EditText target = moneyField("0,00", isNew ? 0 : existing.optLong("target"));
+        f.addView(target);
+        final String[] color = {isNew ? "verde" : existing.optString("color", "verde")};
+        f.addView(label("Cor"));
+        f.addView(pillGrid(Model.COLOR_KEYS, Model.COLOR_NAMES, color, 4));
+        if (!isNew) {
+            final String gid = existing.optString("id");
+            TextView add = pill("Guardar dinheiro nesta meta", true);
+            add.setPadding(dp(16), dp(10), dp(16), dp(10));
+            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(WRAP, WRAP);
+            l.topMargin = dp(16);
+            f.addView(add, l);
+            add.setTag(gid);
+        }
+        AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle(isNew ? "Nova meta" : "Meta").setView(wrap(f))
+                .setNegativeButton("Cancelar", null).setPositiveButton("Salvar", null);
+        if (!isNew) b.setNeutralButton("Excluir", null);
+        final AlertDialog dlg = b.create();
+        if (!isNew) {
+            View add = f.findViewWithTag(existing.optString("id"));
+            add.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                dlg.dismiss();
+                JSONObject pre = new JSONObject();
+                try { pre.put("goal", existing.optString("id")); } catch (JSONException ignored) { }
+                txDialogForGoal(existing.optString("id"));
+            } });
+        }
+        dlg.setOnShowListener(new DialogInterface.OnShowListener() { public void onShow(DialogInterface di) {
+            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                String t = title.getText().toString().trim();
+                if (t.isEmpty()) { title.setError("Dê um nome"); return; }
+                long a = Fin.parse(target.getText().toString());
+                if (a <= 0) { target.setError("Coloque o valor"); return; }
+                Fin.putGoal(MainActivity.this, isNew ? Model.newId("g") : existing.optString("id"), t, a, color[0],
+                        isNew ? System.currentTimeMillis() : existing.optLong("created"));
+                dlg.dismiss();
+                changed();
+            } });
+            if (!isNew) dlg.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                confirmDelete("Excluir a meta \"" + existing.optString("title") + "\"? O dinheiro guardado nela continua contando como guardado.", new Runnable() { public void run() {
+                    Fin.deleteGoal(MainActivity.this, existing.optString("id"));
+                    dlg.dismiss();
+                    changed();
+                } });
+            } });
+        } });
+        dlg.show();
+    }
+
+    void txDialogForGoal(final String goalId) {
+        LinearLayout f = form();
+        f.addView(label("Quanto guardar?"));
+        final EditText amount = moneyField("0,00", 0);
+        f.addView(amount);
+        final AlertDialog dlg = new AlertDialog.Builder(this).setTitle("Guardar na meta").setView(wrap(f))
+                .setNegativeButton("Cancelar", null).setPositiveButton("Guardar", null).create();
+        dlg.setOnShowListener(new DialogInterface.OnShowListener() { public void onShow(DialogInterface di) {
+            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                long a = Fin.parse(amount.getText().toString());
+                if (a <= 0) { amount.setError("Coloque o valor"); return; }
+                Fin.addTx(MainActivity.this, "save", a, "", "", Model.today(), goalId);
+                dlg.dismiss();
+                changed();
+            } });
+        } });
+        dlg.show();
     }
 
     // ---------------- Resumo ----------------

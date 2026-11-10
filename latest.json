@@ -1,4 +1,4 @@
 {
-  "android": { "version": 8, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.apk", "notes": "Semana do ENEM e app pronto pra compartilhar" },
-  "windows": { "version": 8, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.exe", "notes": "Semana do ENEM e app pronto pra compartilhar" }
+  "android": { "version": 9, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.apk", "notes": "Nova aba Dinheiro: mesada, limite por semana, gastos e metas" },
+  "windows": { "version": 9, "url": "https://raw.githubusercontent.com/Cruxyzz/habitos/main/releases/Habitos.exe", "notes": "Nova aba Dinheiro: mesada, limite por semana, gastos e metas" }
 }

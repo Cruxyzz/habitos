@@ -10,7 +10,7 @@ using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("Hábitos")]
 [assembly: System.Reflection.AssemblyProduct("Hábitos")]
-[assembly: System.Reflection.AssemblyVersion("3.2.0.0")]
+[assembly: System.Reflection.AssemblyVersion("3.3.0.0")]
 
 namespace Habitos
 {
@@ -207,7 +207,8 @@ namespace Habitos
             items = Model.ItemsFor(sel).OrderBy(Group).ThenBy(i => i.Done ? 1 : 0).ThenBy(i => i.Minutes < 0 ? 100000 : i.Minutes).ToList();
             next = sel == DateTime.Today ? Model.NextTask() : null;
             int h;
-            if (mode == "resumo") h = Theme.P(BodyTop + 160 + Model.Habits().Count * 66 + 16);
+            if (mode == "dinheiro") h = MoneyHeight();
+            else if (mode == "resumo") h = Theme.P(BodyTop + 160 + Model.Habits().Count * 66 + 16);
             else if (mode == "semana") h = Theme.P(BodyTop + 34 + 7 * 50 + 12);
             else if (mode == "mes")
             {
@@ -252,7 +253,7 @@ namespace Habitos
             var today = DateTime.Today;
 
             // Cabeçalho
-            string title = mode == "resumo" ? "Resumo" : mode == "mes" ? Model.MonthName(monthStart) : mode == "semana" ? "Semana" :
+            string title = mode == "dinheiro" ? "Dinheiro" : mode == "resumo" ? "Resumo" : mode == "mes" ? Model.MonthName(monthStart) : mode == "semana" ? "Semana" :
                 sel == today ? "Hoje" : (sel == today.AddDays(-1) ? "Ontem" : Model.DowNames[(int)sel.DayOfWeek]);
             using (var f = Theme.F(9f)) using (var b = new SolidBrush(Theme.Muted))
                 g.DrawString(Model.Greeting() + (Settings.Get("name", "") == "" ? "" : ", " + Settings.Get("name", "")), f, b, new RectangleF(pad - Theme.P(2), Theme.P(14), w - Theme.P(150), Theme.P(18)), FmtL);
@@ -282,18 +283,19 @@ namespace Habitos
             // Abas
             var tabs = new RectangleF(Theme.P(12), Theme.P(TabsTop), w - Theme.P(24), Theme.P(32));
             using (var path = Theme.Round(tabs, tabs.Height / 2)) using (var b = new SolidBrush(Theme.Surface)) g.FillPath(b, path);
-            string[] tk = { "dia", "semana", "mes", "resumo" }, tl = { "Dia", "Semana", "Mês", "Resumo" };
-            for (int i = 0; i < 4; i++)
+            string[] tk = { "dia", "semana", "mes", "resumo", "dinheiro" }, tl = { "Dia", "Semana", "Mês", "Resumo", "R$" };
+            for (int i = 0; i < 5; i++)
             {
-                var r = new RectangleF(tabs.X + Theme.P(3) + i * (tabs.Width - Theme.P(6)) / 4, tabs.Y + Theme.P(3), (tabs.Width - Theme.P(6)) / 4, tabs.Height - Theme.P(6));
+                var r = new RectangleF(tabs.X + Theme.P(3) + i * (tabs.Width - Theme.P(6)) / 5, tabs.Y + Theme.P(3), (tabs.Width - Theme.P(6)) / 5, tabs.Height - Theme.P(6));
                 bool on = mode == tk[i];
                 if (on) using (var path = Theme.Round(r, r.Height / 2)) using (var b = new SolidBrush(Theme.Tab)) g.FillPath(b, path);
                 else HoverFill(g, r, "tab_" + tk[i], r.Height / 2);
-                using (var f = Theme.F(9f, true)) using (var b = new SolidBrush(on ? Theme.Ink : Theme.Muted)) g.DrawString(tl[i], f, b, r, FmtC);
+                using (var f = Theme.F(8.5f, true)) using (var b = new SolidBrush(on ? Theme.Ink : Theme.Muted)) g.DrawString(tl[i], f, b, r, FmtC);
                 Hit(r, "tab_" + tk[i]);
             }
 
-            if (mode == "resumo") PaintStats(g, w, pad, today);
+            if (mode == "dinheiro") PaintMoney(g, w, pad, today);
+            else if (mode == "resumo") PaintStats(g, w, pad, today);
             else if (mode == "semana") PaintWeek(g, w, pad, today);
             else if (mode == "mes") PaintMonth(g, w, pad, today);
             else PaintDay(g, w, pad, today);
@@ -531,6 +533,163 @@ namespace Habitos
             }
         }
 
+        int MoneyHeight()
+        {
+            if (Fin.Cfg() == null) return Theme.P(BodyTop + 150);
+            var sm = Fin.Sum();
+            int cats = sm.ByCat.Count(v => v > 0);
+            int txs = Math.Min(8, Fin.Txs().Count);
+            int goals = Fin.Goals().Count;
+            return Theme.P(BodyTop + 110 + 50 + 64 + 30 + Math.Max(1, goals) * 56 + (cats > 0 ? 30 + cats * 26 : 0) + (txs > 0 ? 30 + txs * 40 : 0) + 16);
+        }
+
+        void PaintMoney(Graphics g, float w, float pad, DateTime today)
+        {
+            float y = Theme.P(BodyTop);
+            var cf = Fin.Cfg();
+            if (cf == null)
+            {
+                var c = new RectangleF(Theme.P(10), y, w - Theme.P(20), Theme.P(130));
+                using (var path = Theme.Round(c, Theme.P(16))) using (var b = new SolidBrush(Alpha(Theme.Accent, 28))) g.FillPath(b, path);
+                using (var f = Theme.F(11f, true)) using (var b = new SolidBrush(Theme.Ink)) g.DrawString("Vamos organizar sua grana", f, b, c.X + Theme.P(14), c.Y + Theme.P(12));
+                using (var f = Theme.F(8.5f)) using (var b = new SolidBrush(Theme.Muted))
+                    g.DrawString("Conta quanto você recebe e quando. O app separa uma parte pra guardar e mostra quanto dá pra gastar por semana e por dia.", f, b, new RectangleF(c.X + Theme.P(14), c.Y + Theme.P(36), c.Width - Theme.P(28), Theme.P(50)));
+                var br = new RectangleF(c.X + Theme.P(14), c.Bottom - Theme.P(40), Theme.P(110), Theme.P(30));
+                using (var path = Theme.Round(br, br.Height / 2)) using (var b = new SolidBrush(Theme.Accent)) g.FillPath(b, path);
+                using (var f = Theme.F(9f, true)) using (var b = new SolidBrush(Theme.OnAccent)) g.DrawString("Começar", f, b, br, FmtC);
+                Hit(br, "fin:setup");
+                return;
+            }
+            var s = Fin.Sum();
+            var hero = new RectangleF(Theme.P(10), y, w - Theme.P(20), Theme.P(104));
+            using (var path = Theme.Round(hero, Theme.P(16))) using (var b = new SolidBrush(Theme.Surface)) g.FillPath(b, path);
+            using (var f = Theme.F(7.5f, true)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString("PODE GASTAR ATÉ " + Model.ShortDate(s.To).ToUpper(), f, b, hero.X + Theme.P(14), hero.Y + Theme.P(10));
+            using (var f = Theme.Light(20f)) using (var b = new SolidBrush(s.Left < 0 ? Theme.Late : Theme.Ink)) g.DrawString(Fin.Brl(s.Left), f, b, hero.X + Theme.P(8), hero.Y + Theme.P(24));
+            using (var f = Theme.F(8.5f)) using (var b = new SolidBrush(s.Left < 0 ? Theme.Late : Theme.Muted))
+                g.DrawString(s.Left < 0 ? "Passou do planejado. Segure até a próxima mesada." : "≈ " + Fin.Brl(s.PerDay) + " por dia · " + s.DaysLeft + " dias até a mesada", f, b, new RectangleF(hero.X + Theme.P(14), hero.Y + Theme.P(62), hero.Width - Theme.P(28), Theme.P(18)), FmtL);
+            float bh = Theme.P(5), bw = hero.Width - Theme.P(28), by = hero.Bottom - Theme.P(16);
+            using (var path = Theme.Round(new RectangleF(hero.X + Theme.P(14), by, bw, bh), bh / 2)) using (var b = new SolidBrush(Theme.Line)) g.FillPath(b, path);
+            float fr = s.Spendable <= 0 ? 1 : Math.Min(1f, (float)s.Spent / s.Spendable);
+            if (fr > 0) using (var path = Theme.Round(new RectangleF(hero.X + Theme.P(14), by, Math.Max(bh, bw * fr), bh), bh / 2)) using (var b = new SolidBrush(s.Left < 0 ? Theme.Late : Theme.Accent)) g.FillPath(b, path);
+            y = hero.Bottom + Theme.P(8);
+
+            string[] keys = { "fin:out", "fin:in", "fin:save" }, labels = { "− Gasto", "+ Entrada", "Guardar" };
+            float bwid = (w - Theme.P(20) - Theme.P(12)) / 3;
+            for (int i = 0; i < 3; i++)
+            {
+                var r = new RectangleF(Theme.P(10) + i * (bwid + Theme.P(6)), y, bwid, Theme.P(34));
+                bool prim = i == 0;
+                using (var path = Theme.Round(r, r.Height / 2))
+                {
+                    using (var b = new SolidBrush(prim ? Theme.Accent : (hoverKey == keys[i] ? Theme.Hover : Theme.Surface))) g.FillPath(b, path);
+                }
+                using (var f = Theme.F(9f, true)) using (var b = new SolidBrush(prim ? Theme.OnAccent : Theme.Ink)) g.DrawString(labels[i], f, b, r, FmtC);
+                Hit(r, keys[i]);
+            }
+            y += Theme.P(42);
+
+            // Semana
+            var wk = new RectangleF(Theme.P(10), y, w - Theme.P(20), Theme.P(56));
+            using (var path = Theme.Round(wk, Theme.P(12))) using (var b = new SolidBrush(Theme.Surface)) g.FillPath(b, path);
+            using (var f = Theme.F(9.5f, true)) using (var b = new SolidBrush(Theme.Ink)) g.DrawString("Esta semana", f, b, wk.X + Theme.P(12), wk.Y + Theme.P(9));
+            string wtxt = Fin.Brl(s.WeekSpent) + " de " + Fin.Brl(Math.Max(0, s.WeekLimit));
+            using (var f = Theme.F(8.5f, true)) using (var b = new SolidBrush(s.WeekSpent > s.WeekLimit ? Theme.Late : Theme.Muted))
+            { var sz = g.MeasureString(wtxt, f); g.DrawString(wtxt, f, b, wk.Right - sz.Width - Theme.P(10), wk.Y + Theme.P(10)); }
+            float wbw = wk.Width - Theme.P(24), wby = wk.Bottom - Theme.P(16);
+            using (var path = Theme.Round(new RectangleF(wk.X + Theme.P(12), wby, wbw, bh), bh / 2)) using (var b = new SolidBrush(Theme.Line)) g.FillPath(b, path);
+            float wf = s.WeekLimit <= 0 ? 0 : Math.Min(1f, (float)s.WeekSpent / s.WeekLimit);
+            if (wf > 0) using (var path = Theme.Round(new RectangleF(wk.X + Theme.P(12), wby, Math.Max(bh, wbw * wf), bh), bh / 2)) using (var b = new SolidBrush(s.WeekSpent > s.WeekLimit ? Theme.Late : Theme.Accent)) g.FillPath(b, path);
+            y = wk.Bottom + Theme.P(8);
+
+            // Plano (uma linha)
+            var pl = new RectangleF(Theme.P(10), y, w - Theme.P(20), Theme.P(26));
+            string plan = "Guardado " + Fin.Brl(s.Saved) + " de " + Fin.Brl(s.SaveTarget) + " (" + s.SavePct + "%)";
+            HoverFill(g, pl, "fin:setup", Theme.P(8));
+            using (var f = Theme.F(8.5f)) using (var b = new SolidBrush(s.Saved >= s.SaveTarget ? Theme.Muted : Theme.Late))
+                g.DrawString(plan, f, b, new RectangleF(pl.X + Theme.P(4), pl.Y, pl.Width - Theme.P(40), pl.Height), FmtL);
+            using (var f = Theme.F(8.5f, true)) using (var b = new SolidBrush(Theme.Accent)) g.DrawString("Editar", f, b, new RectangleF(pl.Right - Theme.P(44), pl.Y, Theme.P(44), pl.Height), FmtL);
+            Hit(pl, "fin:setup");
+            y += Theme.P(30);
+
+            // Metas
+            using (var f = Theme.F(7.5f, true)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString("METAS · GUARDADO " + Fin.Brl(Fin.TotalSaved()), f, b, pad - Theme.P(2), y + Theme.P(6));
+            var ng = new RectangleF(w - pad - Theme.P(54), y, Theme.P(56), Theme.P(24));
+            using (var f = Theme.F(8.5f, true)) using (var b = new SolidBrush(Theme.Accent)) g.DrawString("+ Nova", f, b, ng, FmtC);
+            Hit(ng, "fin:newgoal");
+            y += Theme.P(30);
+            var goals = Fin.Goals();
+            if (goals.Count == 0)
+            {
+                using (var f = Theme.F(8.5f)) using (var b = new SolidBrush(Theme.Muted))
+                    g.DrawString("Crie uma meta pra algo que você quer comprar.", f, b, new RectangleF(pad - Theme.P(2), y, w - pad * 2, Theme.P(40)));
+                y += Theme.P(56);
+            }
+            foreach (var gl in goals)
+            {
+                var r = new RectangleF(Theme.P(10), y, w - Theme.P(20), Theme.P(50));
+                string key = "goal:" + Model.Str(gl, "id");
+                using (var path = Theme.Round(r, Theme.P(12))) using (var b = new SolidBrush(key == hoverKey ? Theme.Hover : Theme.Surface)) g.FillPath(b, path);
+                long sv = Fin.GoalSaved(Model.Str(gl, "id")), tg = Model.L(gl, "target");
+                var col = Model.ColorOf(Model.Str(gl, "color") == "" ? "verde" : Model.Str(gl, "color"));
+                using (var f = Theme.F(9.5f, true)) using (var b = new SolidBrush(Theme.Ink)) g.DrawString(Model.Str(gl, "title"), f, b, new RectangleF(r.X + Theme.P(12), r.Y + Theme.P(6), r.Width - Theme.P(120), Theme.P(20)), FmtL);
+                string gv = Fin.Brl(sv) + " / " + Fin.Brl(tg);
+                using (var f = Theme.F(8f)) using (var b = new SolidBrush(Theme.Muted)) { var sz = g.MeasureString(gv, f); g.DrawString(gv, f, b, r.Right - sz.Width - Theme.P(10), r.Y + Theme.P(8)); }
+                float gbw = r.Width - Theme.P(24), gby = r.Bottom - Theme.P(14);
+                using (var path = Theme.Round(new RectangleF(r.X + Theme.P(12), gby, gbw, bh), bh / 2)) using (var b = new SolidBrush(Theme.Line)) g.FillPath(b, path);
+                float gf = tg <= 0 ? 0 : Math.Min(1f, (float)sv / tg);
+                if (gf > 0) using (var path = Theme.Round(new RectangleF(r.X + Theme.P(12), gby, Math.Max(bh, gbw * gf), bh), bh / 2)) using (var b = new SolidBrush(col)) g.FillPath(b, path);
+                Hit(r, key);
+                y += Theme.P(56);
+            }
+
+            // Categorias
+            long max = s.ByCat.Max();
+            if (max > 0)
+            {
+                using (var f = Theme.F(7.5f, true)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString("ONDE VOCÊ GASTOU", f, b, pad - Theme.P(2), y + Theme.P(8));
+                y += Theme.P(30);
+                foreach (int i in Enumerable.Range(0, Fin.OutCats.Length).OrderByDescending(i => s.ByCat[i]))
+                {
+                    if (s.ByCat[i] == 0) continue;
+                    using (var f = Theme.F(8.5f)) using (var b = new SolidBrush(Theme.Ink)) g.DrawString(Fin.OutShort[i], f, b, new RectangleF(pad - Theme.P(2), y, Theme.P(86), Theme.P(18)), FmtL);
+                    string v = Fin.Brl(s.ByCat[i]);
+                    float vx;
+                    using (var f = Theme.F(8.5f)) using (var b = new SolidBrush(Theme.Muted)) { var sz = g.MeasureString(v, f); vx = w - pad - sz.Width; g.DrawString(v, f, b, vx, y + Theme.P(1)); }
+                    float bx = pad + Theme.P(86), bww = vx - bx - Theme.P(8);
+                    using (var path = Theme.Round(new RectangleF(bx, y + Theme.P(7), bww, bh), bh / 2)) using (var b = new SolidBrush(Theme.Line)) g.FillPath(b, path);
+                    using (var path = Theme.Round(new RectangleF(bx, y + Theme.P(7), Math.Max(bh, bww * s.ByCat[i] / max), bh), bh / 2)) using (var b = new SolidBrush(Model.ColorOf(Fin.OutColors[i]))) g.FillPath(b, path);
+                    y += Theme.P(26);
+                }
+            }
+
+            // Lançamentos
+            var txs = Fin.Txs().Take(8).ToList();
+            if (txs.Count > 0)
+            {
+                using (var f = Theme.F(7.5f, true)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString("ÚLTIMOS LANÇAMENTOS", f, b, pad - Theme.P(2), y + Theme.P(8));
+                y += Theme.P(30);
+                foreach (var t in txs)
+                {
+                    if (y + Theme.P(40) > Height) break;
+                    var r = new RectangleF(Theme.P(8), y, w - Theme.P(16), Theme.P(38));
+                    string key = "tx:" + Model.Str(t, "key");
+                    HoverFill(g, r, key, Theme.P(10));
+                    var ty = Model.Str(t, "type");
+                    string note = Model.Str(t, "note");
+                    string amt = (ty == "out" ? "− " : ty == "in" ? "+ " : "") + Fin.Brl(Model.L(t, "amount"));
+                    float ax;
+                    using (var f = Theme.F(9.5f, true)) using (var b = new SolidBrush(ty == "out" ? Theme.Ink : Theme.Accent)) { var sz = g.MeasureString(amt, f); ax = r.Right - sz.Width - Theme.P(8); g.DrawString(amt, f, b, new RectangleF(ax, r.Y, sz.Width + 2, r.Height), FmtL); }
+                    using (var f = Theme.F(9.5f)) using (var b = new SolidBrush(Theme.Ink))
+                        g.DrawString(note == "" ? Fin.CatName(ty, Model.Str(t, "cat")) : note, f, b, new RectangleF(r.X + Theme.P(10), r.Y + Theme.P(2), ax - r.X - Theme.P(16), Theme.P(20)), FmtL);
+                    DateTime dt; string ds = Model.Str(t, "date");
+                    string sub = (DateTime.TryParse(ds, out dt) ? Model.ShortDate(dt) : ds) + " · " + Fin.CatName(ty, Model.Str(t, "cat"));
+                    using (var f = Theme.F(7.5f)) using (var b = new SolidBrush(Theme.Muted)) g.DrawString(sub, f, b, new RectangleF(r.X + Theme.P(10), r.Y + Theme.P(20), ax - r.X - Theme.P(16), Theme.P(16)), FmtL);
+                    Hit(r, key);
+                    y += Theme.P(40);
+                }
+            }
+        }
+
         void NavRow(Graphics g, float w, string label, string prevKey, string nextKey)
         {
             float y = Theme.P(BodyTop);
@@ -724,6 +883,11 @@ namespace Habitos
                 else if (k == "mnext") { monthStart = monthStart.AddMonths(1); Reload(); }
                 else if (k.StartsWith("day:")) GoDay(Model.ParseDate(k.Substring(4)));
                 else if (k.StartsWith("habit:")) Editors.Edit("h", k.Substring(6));
+                else if (k == "fin:setup") Editors.MoneySetup();
+                else if (k == "fin:newgoal") Editors.GoalForm(null);
+                else if (k.StartsWith("fin:")) Editors.TxForm(k.Substring(4), null);
+                else if (k.StartsWith("goal:")) { var gl = Fin.Goals().FirstOrDefault(x => Model.Str(x, "id") == k.Substring(5)); if (gl != null) Editors.GoalForm(gl); }
+                else if (k.StartsWith("tx:")) { var tx = Fin.Txs().FirstOrDefault(x => Model.Str(x, "key") == k.Substring(3)); if (tx != null) Editors.TxForm(Model.Str(tx, "type"), tx); }
                 else if (k.StartsWith("sug:")) { var sg = Model.Suggestions.FirstOrDefault(x => x[0] == k.Substring(4)); if (sg != null) { Model.AddSuggestion(sg); Program.SyncSoon(); } }
                 else if (k.StartsWith("item:"))
                 {
@@ -835,6 +999,162 @@ namespace Habitos
         static Dictionary<string, object> Copy(Dictionary<string, object> o)
         {
             return o == null ? new Dictionary<string, object>() : new Dictionary<string, object>(o);
+        }
+
+        static CheckBox[] PillGroup(DarkForm f, string[] keys, string[] names, string sel, int x, int y, int perRow, int w, int h, Action<string> onPick)
+        {
+            var pills = new CheckBox[keys.Length];
+            for (int i = 0; i < keys.Length; i++)
+            {
+                int k = i;
+                pills[i] = f.Pill(names[i], keys[i] == sel, x + (i % perRow) * (w + 6), y + (i / perRow) * (h + 6), w);
+                pills[i].Height = Theme.P(h);
+                pills[i].Click += (s, e) => { foreach (var p in pills) p.Checked = p == pills[k]; onPick(keys[k]); };
+            }
+            return pills;
+        }
+
+        public static void MoneySetup()
+        {
+            var cf = Fin.Cfg();
+            var f = new DarkForm("Sua mesada", 380, 330);
+            f.Lbl("QUANTO VOCÊ RECEBE POR MÊS?", 22, 18);
+            var amount = f.Box(cf == null ? "" : Fin.Brl(Model.L(cf, "allowance")).Replace("R$ ", ""), 22, 40, 160);
+            f.Lbl("DIA DO MÊS EM QUE RECEBE", 200, 18);
+            var day = f.Box(cf == null ? "" : Model.L(cf, "payday").ToString(), 200, 40, 158);
+            f.Lbl("QUANTO GUARDAR ASSIM QUE RECEBER?", 22, 86);
+            string pct = cf == null ? "20" : Model.L(cf, "savePct").ToString();
+            PillGroup(f, new[] { "0", "10", "20", "30", "50" }, new[] { "Nada", "10%", "20%", "30%", "50%" }, pct, 22, 108, 5, 62, 32, v => pct = v);
+            f.Controls.Add(new Label { Text = "Guardar primeiro e gastar o resto é o jeito mais fácil de juntar dinheiro. 20% é um bom começo.", AutoSize = false, Size = new Size(Theme.P(336), Theme.P(44)), ForeColor = Theme.Muted, Location = new Point(Theme.P(22), Theme.P(156)) });
+            var save = f.Btn("Salvar", 238, 272, 120, true);
+            f.Btn("Cancelar", 110, 272, 120).Click += (s, e) => f.Close();
+            f.AcceptButton = save;
+            save.Click += (s, e) =>
+            {
+                long a = Fin.Parse(amount.Text);
+                if (a <= 0) { MessageBox.Show("Coloque o valor da mesada, por exemplo 300,00."); return; }
+                int d; if (!int.TryParse(day.Text.Trim(), out d) || d < 1 || d > 31) { MessageBox.Show("Coloque o dia do mês (1 a 31)."); return; }
+                Fin.SetCfg(a, d, int.Parse(pct));
+                Program.SyncSoon();
+                f.Close();
+            };
+            f.Show(); f.Activate();
+        }
+
+        public static void TxForm(string type, Dictionary<string, object> existing)
+        {
+            bool isNew = existing == null;
+            string title = type == "out" ? "Gasto" : type == "in" ? "Entrada" : "Guardar dinheiro";
+            var f = new DarkForm(isNew ? title : "Editar · " + title.ToLower(), 380, 420);
+            f.Lbl("VALOR", 22, 18);
+            var amount = f.Box(isNew ? "" : Fin.Brl(Model.L(existing, "amount")).Replace("R$ ", "").Replace("−", "-"), 22, 40, 160);
+            amount.Font = Theme.F(14f);
+            string cat = isNew ? (type == "out" ? "lanche" : "extra") : Model.Str(existing, "cat");
+            string goal = isNew ? "" : Model.Str(existing, "goal");
+            int y = 92;
+            if (type == "out")
+            {
+                f.Lbl("COM O QUÊ?", 22, y);
+                PillGroup(f, Fin.OutCats, Fin.OutShort, cat, 22, y + 22, 3, 108, 30, v => cat = v);
+                y += 22 + 3 * 36 + 8;
+            }
+            else if (type == "in")
+            {
+                f.Lbl("DE ONDE VEIO?", 22, y);
+                PillGroup(f, Fin.InCats, Fin.InShort, cat, 22, y + 22, 4, 79, 30, v => cat = v);
+                y += 22 + 36 + 8;
+            }
+            else
+            {
+                var goals = Fin.Goals();
+                f.Lbl("PRA QUAL META?", 22, y);
+                var ks = new[] { "" }.Concat(goals.Select(g => Model.Str(g, "id"))).ToArray();
+                var ns = new[] { "Reserva" }.Concat(goals.Select(g => Model.Str(g, "title"))).ToArray();
+                PillGroup(f, ks, ns, goal, 22, y + 22, 2, 165, 30, v => goal = v);
+                y += 22 + ((ks.Length + 1) / 2) * 36 + 8;
+            }
+            f.Lbl("DESCRIÇÃO (OPCIONAL)", 22, y);
+            var note = f.Box(isNew ? "" : Model.Str(existing, "note"), 22, y + 22, 200);
+            f.Lbl("DATA", 236, y);
+            var date = f.Box((isNew ? DateTime.Today : Model.ParseDate(Model.Str(existing, "date"))).ToString("dd/MM/yyyy"), 236, y + 22, 122);
+            y += 70;
+            f.ClientSize = new Size(Theme.P(380), Theme.P(y + 60));
+            var save = f.Btn("Salvar", 238, y, 120, true);
+            f.Btn("Cancelar", 110, y, 120).Click += (s, e) => f.Close();
+            if (!isNew) f.Btn("Excluir", 22, y, 80).Click += (s, e) => { Fin.DeleteTx(Model.Str(existing, "key")); Program.SyncSoon(); f.Close(); };
+            f.AcceptButton = save;
+            save.Click += (s, e) =>
+            {
+                var raw = amount.Text.Trim();
+                bool neg = raw.StartsWith("-") || raw.StartsWith("−");
+                long a = Fin.Parse(raw.Replace("-", "").Replace("−", ""));
+                if (a <= 0) { MessageBox.Show("Coloque o valor, por exemplo 12,50."); return; }
+                if (neg && type == "save") a = -a;
+                DateTime dd; var txt = date.Text.Trim();
+                if (txt.Length <= 5) txt += "/" + DateTime.Today.Year;
+                if (!DateTime.TryParseExact(txt, new[] { "d/M/yyyy", "dd/MM/yyyy" }, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dd))
+                { MessageBox.Show("Data inválida. Use o formato 25/12/2026."); return; }
+                if (isNew) Fin.AddTx(type, a, cat, note.Text.Trim(), Model.Key(dd), goal);
+                else
+                {
+                    var o = new Dictionary<string, object>(existing);
+                    o["amount"] = a; o["cat"] = cat; o["note"] = note.Text.Trim(); o["date"] = Model.Key(dd); o["goal"] = goal;
+                    Fin.UpdateTx(Model.Str(existing, "key"), o);
+                }
+                Program.SyncSoon();
+                f.Close();
+            };
+            f.Show(); f.Activate(); amount.Focus();
+        }
+
+        public static void GoalForm(Dictionary<string, object> existing)
+        {
+            bool isNew = existing == null;
+            var f = new DarkForm(isNew ? "Nova meta" : "Meta", 380, 300);
+            f.Lbl("O QUE VOCÊ QUER COMPRAR?", 22, 18);
+            var title = f.Box(isNew ? "" : Model.Str(existing, "title"), 22, 40, 336);
+            f.Lbl("QUANTO CUSTA?", 22, 84);
+            var target = f.Box(isNew ? "" : Fin.Brl(Model.L(existing, "target")).Replace("R$ ", ""), 22, 106, 160);
+            string color = isNew ? "verde" : (Model.Str(existing, "color") == "" ? "verde" : Model.Str(existing, "color"));
+            f.Lbl("COR", 200, 84);
+            var sws = new List<Panel>();
+            for (int i = 0; i < Model.ColorKeys.Length; i++)
+            {
+                var sw = new Panel { Location = new Point(Theme.P(200 + (i % 4) * 32), Theme.P(104 + (i / 4) * 30)), Size = new Size(Theme.P(28), Theme.P(28)), Cursor = Cursors.Hand, Tag = Model.ColorKeys[i] };
+                sw.Paint += (s2, e2) =>
+                {
+                    Theme.Smooth(e2.Graphics); e2.Graphics.Clear(Theme.Bg);
+                    using (var b = new SolidBrush(Model.ColorOf((string)((Panel)s2).Tag))) e2.Graphics.FillEllipse(b, Theme.P(3), Theme.P(3), Theme.P(22), Theme.P(22));
+                    if ((string)((Panel)s2).Tag == color) using (var pen = new Pen(Theme.Ink, Theme.P(2))) e2.Graphics.DrawEllipse(pen, Theme.P(1), Theme.P(1), Theme.P(26), Theme.P(26));
+                };
+                sw.Click += (s2, e2) => { color = (string)((Panel)s2).Tag; foreach (var x in sws) x.Invalidate(); };
+                sws.Add(sw); f.Controls.Add(sw);
+            }
+            if (!isNew)
+            {
+                long sv = Fin.GoalSaved(Model.Str(existing, "id"));
+                f.Controls.Add(new Label { Text = "Guardado: " + Fin.Brl(sv), AutoSize = true, ForeColor = Theme.Muted, Location = new Point(Theme.P(22), Theme.P(172)) });
+                f.Btn("Guardar dinheiro nela", 22, 196, 200).Click += (s, e) => { f.Close(); TxForm("save", null); };
+            }
+            var save = f.Btn("Salvar", 238, 246, 120, true);
+            f.Btn("Cancelar", 110, 246, 120).Click += (s, e) => f.Close();
+            if (!isNew) f.Btn("Excluir", 22, 246, 80).Click += (s, e) =>
+            {
+                if (MessageBox.Show("Excluir a meta? O dinheiro guardado nela continua contando como guardado.", "Hábitos", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+                Fin.DeleteGoal(Model.Str(existing, "id")); Program.SyncSoon(); f.Close();
+            };
+            f.AcceptButton = save;
+            save.Click += (s, e) =>
+            {
+                var t = title.Text.Trim();
+                if (t == "") { MessageBox.Show("Dê um nome à meta."); return; }
+                long a = Fin.Parse(target.Text);
+                if (a <= 0) { MessageBox.Show("Coloque quanto custa, por exemplo 450,00."); return; }
+                Fin.PutGoal(isNew ? Model.NewId("g") : Model.Str(existing, "id"), t, a, color, isNew ? Model.Now() : Model.L(existing, "created"));
+                Program.SyncSoon();
+                f.Close();
+            };
+            f.Show(); f.Activate();
         }
 
         public static void DayPreview(DateTime d)
